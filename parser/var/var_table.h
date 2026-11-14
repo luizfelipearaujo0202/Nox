@@ -31,89 +31,6 @@
       _NOX_HASHTABLE_HASH_ROTL64(v2, 32); \
   } while(0)
 
-static inline __NoxValue_BOOLEAN_TYPE
-  __NoxVar_is_valid
-    (__NoxVar__* n)
-{
-  if (n == NULL)
-    { return __NoxBool_FALSE_VALUE; }
-
-  else if (
-    n->name == NULL ||
-    n->value == NULL
-  ) { return __NoxBool_FALSE_VALUE;}
-
-  return __NoxBool_TRUE_VALUE;
-}
-
-
-static inline void
-  __NoxVar_free(
-    __NoxVar__* node
-  ) {
-  if (node == NULL)
-    { return; }
-
-  if (node->value != NULL) 
-    {__NoxVar_value_release(node->value);}
-  free(node->name);
-
-  if (node->next != NULL) {
-    __NoxVar_free(node->next);
-  }
-
-  free(node);
-}
-
-static inline void  
-  __NoxVar_free_single(
-    __NoxVar__* node
-  ) {
-  if (node == NULL)
-    { return; }
-
-  __NoxVar_value_release(node->value);
-  free(node->name);
-  free(node);
-}
-
-
-static inline __NoxVar__*
-  __NoxVar_create(
-    const char* name,
-    const __NoxVar_value* value,
-    __NoxVar__* next
-  )
-{
-  if (name == NULL ||
-      value == NULL)
-    { return NULL; }
-
-  __NoxVar__* node =
-    (__NoxVar__*)malloc(
-      sizeof(__NoxVar__)
-    );
-  if (node == NULL)
-    { free(node);
-      return NULL; }
-
-  node->name = (char*)malloc(strlen(name) + 1);
-  if (node->name == NULL)
-    { free(node);
-      return NULL; }
-  strcpy(node->name, name);
-
-  node->value = 
-    __NoxVar_value_create(value->_t, value->_v);
-  if (node->value == NULL)
-  {
-    __NoxVar_free(node);
-    return NULL;
-  }
-  node->next = next;
-  return node;
-}
-
 
 /* 
 'buckets': array de ponteiros 
@@ -422,6 +339,8 @@ static inline __NoxValue_BOOLEAN_TYPE
           __NoxVar_create(
             old_current->name,
             old_current->value,
+            old_current->explicit_type,
+            old_current->declared_type,
             NULL
           );
 
@@ -591,6 +510,8 @@ static inline __NoxValue_BOOLEAN_TYPE
         __NoxVar_create(
             var->name,
             var->value,
+            var->explicit_type,
+            var->declared_type,
             NULL
         );
 

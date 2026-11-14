@@ -19,25 +19,25 @@ As funções documentadas possuem os parâmetros representados
 pelo símbolo **@** como prefixo para facilitar a identificação
 dos parâmetros.
 - Exemplos retirados de [Parser](../parser/parser.h):
-  > "1. Valida @p"
-  > "3. Retorna o token definido por @n"
-  > "2. Verifica se @n [...]"
+  ```1. Valida @p```
+  ```3. Retorna o token definido por @n```
+  ```2. Verifica se @n [...]```
 
 ### 2.2. Variáveis Internas ($)
 Além dos parâmetros com *@*, também existem as variáveis
 internas, onde o prefixo é **$** com a intenção de diferenciar
 as variáveis de outros itens.
 - Exemplos retirados de [Parser](../parser/parser.h):
-  > "4. Compara o tipo de $current [...]"
-  > "3. Guarda o token atual em $token [...]"
+  ```4. Compara o tipo de $current [...]```
+  ```3. Guarda o token atual em $token [...]```
 
 ### 2.3. Referências Diretas
 As referências diretas utilizadas durante a documentação,
 seja funções, estruturas ou outros elementos, são escritas
 com seu nome real, sem modificação.
 - Exemplos retirados de [Parser](../parser/parser.h):
-  > "6. Retorna __NoxBool_FALSE_VALUE."
-  > "2. Captura o token atual com __NoxParser_peek [...]"
+  ```6. Retorna __NoxBool_FALSE_VALUE.```
+  ```2. Captura o token atual com __NoxParser_peek [...]```
 
 
 ## 3. Estrutura dos Documentos
@@ -58,9 +58,9 @@ este padrão!*
 A identificação da função é representada pelo trecho
 "- Função: ", que apresenta o nome real da função.
 - Exemplos retirado de [Parser](../parser/parser.h):
-  > "- Função: __NoxParser_match"
-  > "- Função: __NoxParser_advance"
-  > "- Função: __NoxParser_parse_statement"
+  ```- Função: __NoxParser_match"```
+  ```- Função: __NoxParser_advance```
+  ```- Função: __NoxParser_parse_statement```
 
 ### 3.2. Parâmetros
 Os parâmetros de cada função são mostrados como uma

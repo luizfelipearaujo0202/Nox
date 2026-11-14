@@ -29,15 +29,3 @@ typedef struct {
   __NoxVar_HashTable* table;
   __NoxError_context* errors;
 } __NoxExec_context;
-
-static inline __NoxValue_BOOLEAN_TYPE
-  __NoxExec_context_is_valid(
-    __NoxExec_context* c
-  ) {
-    if (c != NULL &&
-        c->program != NULL &&
-        __NoxDynaArr_is_valid(c->program->statements) &&
-        c->table != NULL)
-      {return __NoxBool_TRUE_VALUE;}
-    else return __NoxBool_FALSE_VALUE;
-  }

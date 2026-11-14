@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include "structures.h"
+#include "../parser/var/var.h"
 #include "../error/error_structures.h"
 
 typedef enum {
@@ -38,6 +39,9 @@ struct __NoxAST_NODE {
     struct {
       struct __NoxAST_NODE* identifier;
       struct __NoxAST_NODE* value;
+
+      __NoxValue_BOOLEAN_TYPE explicit_type;
+      __NoxVar_value_type type;
     } assignment;
   } data;
 } __NoxAST_NODE;

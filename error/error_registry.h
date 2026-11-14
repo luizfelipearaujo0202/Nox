@@ -4,6 +4,7 @@
 #include "../error.h"
 #include "error_aux.h"
 #include "../dynamic_array.h"
+#include "error_structures.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,6 +145,29 @@ static inline __NoxValue_BOOLEAN_TYPE
       { return __NoxBool_FALSE_VALUE; }
     return __NoxDynaArr_is_valid(arr->data); }
 
+static inline int
+  __NoxError_get_index
+    (__NoxError_regarray* arr,
+    __NoxError_registration* e) {
+  if (!__NoxError_regarray_is_valid(arr))
+    { return -1; }
+  if (e == NULL)
+    { return -1; }
+  else if (
+    !__NoxError_is_valid(e->error, __NoxBool_FALSE_VALUE)
+  ) { return -1; }
+
+  __NoxError_regarray_find_config c = {
+    .mode = NOX_REG_FIND_ID,
+    .expected = {
+      .id = e->id
+    }
+  };
+
+  int index = __NoxDynaArr_find(arr->data, &c);
+  return index;
+}
+
 
 static inline __NoxValue_BOOLEAN_TYPE
   __NoxError_regarray_clear
@@ -159,7 +183,7 @@ static inline __NoxValue_BOOLEAN_TYPE
 
 
 static inline __NoxValue_BOOLEAN_TYPE
-  __NoxError_free_regarray
+  __NoxError_regarray_free
     (__NoxError_regarray* arr) {
     if (!__NoxError_regarray_clear(arr))
       { return __NoxBool_FALSE_VALUE; }
@@ -223,6 +247,27 @@ static inline __NoxValue_BOOLEAN_TYPE
   }
 
 
+static inline __NoxValue_BOOLEAN_TYPE
+  __NoxError_regarray_remove(
+    __NoxError_regarray* arr,
+    __NoxError_registration* e
+  ) {
+  if (!__NoxError_regarray_is_valid(arr) ||
+      e == NULL)
+  { return __NoxBool_FALSE_VALUE; }
+
+  if (!__NoxError_is_valid(e->error, __NoxBool_FALSE_VALUE))
+  { return __NoxBool_FALSE_VALUE; }
+
+  int index = __NoxError_get_index(arr, e);
+
+  if (index == -1)
+    { return __NoxBool_FALSE_VALUE; }
+
+  return __NoxDynaArr_remove(arr->data, index);
+}
+
+
 static inline __NoxError_registration*
   __NoxError_get_first
     (__NoxError_regarray* arr) {
@@ -230,6 +275,15 @@ static inline __NoxError_registration*
       { return NULL; }
     else return (__NoxError_registration*) \
       __NoxDynaArr_get(arr->data, 0);
+  }
+
+static inline __NoxError_registration*
+  __NoxError_get_last
+    (__NoxError_regarray* arr) {
+    if (!__NoxError_regarray_is_valid(arr))
+      { return NULL; }
+    else return (__NoxError_registration*) \
+      __NoxDynaArr_get(arr->data, arr->data->count - 1);
   }
 
 static inline __NoxError_registration*
@@ -246,6 +300,26 @@ static inline __NoxError_registration*
     };
 
     int index = __NoxDynaArr_find(arr->data, &c);
+    if (index != -1)
+      { return (__NoxError_registration*)\
+        __NoxDynaArr_get(arr->data, index); }
+    return NULL;
+  }
+
+static inline __NoxError_registration*
+  __NoxError_get_last_fatal
+  (__NoxError_regarray* arr) {
+    if (!__NoxError_regarray_is_valid(arr))
+      { return NULL; }
+
+    __NoxError_regarray_find_config c = {
+      .mode = NOX_REG_FIND_FATAL,
+      .expected = {
+        .fatal = __NoxBool_TRUE_VALUE,
+      }
+    };
+
+    int index = __NoxDynaArr_find_last(arr->data, &c);
     if (index != -1)
       { return (__NoxError_registration*)\
         __NoxDynaArr_get(arr->data, index); }

@@ -10,7 +10,9 @@
 #include "structures/exec_structures.h"
 #include "structures/ast_structures.h"
 #include "structures/structures.h"
+
 #include "token_array.h"
+#include "dynamic_array.h"
 
 #include "file_ctrl.h"
 
@@ -112,14 +114,14 @@ int main(int argc, char* argv[]) {
         __NoxError_create_source(src, err->error->line);
 
     if (source == NULL)
-      { __NoxError_free_regarray(context.registry);
+      { __NoxError_regarray_free(context.registry);
         __NoxToken_array_free(&arr);
         free(src);
         return 1; }
 
     __NoxError_render_line(err->error, source);
     __NoxError_free_source(source);
-    __NoxError_free_regarray(context.registry);
+    __NoxError_regarray_free(context.registry);
     __NoxToken_array_free(&arr);
     
     free(src);
@@ -153,7 +155,7 @@ int main(int argc, char* argv[]) {
       "MAIN",
       "",
       "Token: %s | Texto: '%s' | Tamanho: %zu\n",
-      show_token(&arr.data[i]),
+      __NoxDebug_show_token(&arr.data[i]),
       (token[0] == '\n' ? "\\n" : token),
       arr.data[i].length
     );
@@ -173,21 +175,21 @@ int main(int argc, char* argv[]) {
             __NoxError_create_source(src, err->error->line);
 
         if (source == NULL)
-          { __NoxError_free_regarray(context.registry);
+          { __NoxError_regarray_free(context.registry);
             __NoxToken_array_free(&arr);
             free(src);
             return 1; }
 
         __NoxError_render_line(err->error, source);
         __NoxError_free_source(source);
-        __NoxError_free_regarray(context.registry);
+        __NoxError_regarray_free(context.registry);
         __NoxToken_array_free(&arr);
         free(src);
         return 1;
       }
 
       __NoxToken_array_free(&arr);
-      __NoxError_free_regarray(context.registry);
+      __NoxError_regarray_free(context.registry);
       free(src);
       return 1; }
 
@@ -209,7 +211,7 @@ int main(int argc, char* argv[]) {
     );
 
     __NoxToken_array_free(&arr);
-    __NoxError_free_regarray(context.registry);
+    __NoxError_regarray_free(context.registry);
     __NoxParser_program_free(pb);
     __NoxFile_free(src);
     return 1;
@@ -225,8 +227,8 @@ int main(int argc, char* argv[]) {
   __NoxExec_context exec_context;
   exec_context.program = pb;
   exec_context.index = 0;
-  exec_context.node = (__NoxAST_NODE*)\
-    __NoxDynaArr_get(pb->statements, 0);
+  // O executor consegue se reajustar quando c.node é NULL
+  exec_context.node = NULL;
   exec_context.errors = &context;
   exec_context.table = hashtable;
 
@@ -236,17 +238,132 @@ int main(int argc, char* argv[]) {
     "",
     "Executando\n"
   );
-  if (!__NoxExec_process_single(&exec_context, 0)) {
+  if (!__NoxExec_process_all(&exec_context)) {
     _NOX_DEBUG_LOG(
       DEBUG_ERROR,
       "MAIN",
       "",
       "A execução falhou\n"
     );
+  }
+
+  if (exec_context.errors->registry->data->count != 0)
+  {
+    _NOX_DEBUG_LOG(
+      DEBUG_INFO,
+      "MAIN",
+      "",
+      "Erros encontrados; imprimindo\n"
+    );
+
+    while (
+      exec_context.errors->registry->data->count > 0
+    ) {
+      _NOX_DEBUG_LOG(
+        DEBUG_INFO,
+        "MAIN",
+        "",
+        "Contagem: %zu\n",
+        exec_context.errors->registry->data->count
+      );
+
+      _NOX_DEBUG_LOG(
+        DEBUG_INFO,
+        "MAIN",
+        "",
+        "Obtendo último fatal"
+      );
+      __NoxError_registration* e = 
+        __NoxError_get_last_fatal(
+          exec_context.errors->registry
+        );
+
+      _NOX_DEBUG_LOG(
+        DEBUG_VERIFY,
+        "",
+        "",
+        ": %p\n",
+        (void*)e
+      );
+
+      if (e == NULL) {
+        _NOX_DEBUG_LOG(
+          DEBUG_INFO,
+          "MAIN",
+          "",
+          "Erro fatal é NULL: tentando coletar erros comuns\n"
+        );
+
+        e = __NoxError_get_last(exec_context.errors->registry);
+
+        if (e == NULL) {
+          _NOX_DEBUG_LOG(
+            DEBUG_INFO,
+            "MAIN",
+            "",
+            "Erro é NULL: finalizando\n"
+          );
+          break;
+        }
+      }
+
+      if (e != NULL && e->error != NULL) {
+        _NOX_DEBUG_LOG(
+          DEBUG_INFO,
+          "MAIN",
+          "",
+          "Criando source"
+        );
+        __NoxError_source* source =
+            __NoxError_create_source(src, e->error->line);
+
+        _NOX_DEBUG_LOG(
+          DEBUG_VERIFY,
+          "",
+          "",
+          ": %p\n",
+          (void*)source
+        );
+
+        if (source != NULL) {
+          __NoxError_render_line(e->error, source);
+          __NoxError_free_source(source);
+        }
+      }
+
+      _NOX_DEBUG_LOG(
+        DEBUG_INFO,
+        "MAIN",
+        "",
+        "Removendo erro"
+      );
+      if (!__NoxError_regarray_remove(
+        exec_context.errors->registry,
+        e
+      )) {
+        _NOX_DEBUG_LOG(
+          DEBUG_VERIFY,
+          "",
+          "",
+          ": [ERRO]\n"
+        );
+
+        __NoxError_free(e->error);
+        free(e);
+        break;
+      }
+      else {
+        _NOX_DEBUG_LOG(
+          DEBUG_VERIFY,
+          "","",
+          ": [DONE]\n"
+        );
+      }
+    }
 
     __NoxVar_HashTable_free(hashtable);
     __NoxToken_array_free(&arr);
-    __NoxError_free_regarray(context.registry);
+    __NoxError_regarray_free(context.registry);
     __NoxParser_program_free(pb);
     __NoxFile_free(src);
     return 1;
@@ -263,6 +380,6 @@ int main(int argc, char* argv[]) {
   __NoxToken_array_free(&arr);
   __NoxFile_free(src);
 
-  __NoxError_free_regarray(context.registry);
+  __NoxError_regarray_free(context.registry);
   return 0;
 }

@@ -7,6 +7,7 @@
 #include "../error/error_registry.h"
 #include "../error.h"
 #include "../debug.h"
+#include "var/var.h"
 
 #include <stddef.h>
 #include <stdlib.h>
@@ -664,7 +665,7 @@ static inline __NoxAST_NODE*
           "PARSER",
           "parse_primary",
           "OPERATOR; token type=%s | pos=%zu\n",
-          show_token(__NoxParser_peek(p, -1)),
+          __NoxDebug_show_token(__NoxParser_peek(p, -1)),
           p->pos
         );
         return __NoxParser_parse_primary(p); }
@@ -933,7 +934,6 @@ static inline __NoxAST_NODE*
     return left;
   }
 
-
 /*
 - Função: __NoxParser_parse_statement
 
@@ -1021,6 +1021,97 @@ static inline __NoxAST_NODE*
         "error while consuming identifier\n"
       );
       return NULL; }
+
+  /*
+  Verifica se o tipo é explícito
+  Se sim: guarda
+  Se não: continua
+  */
+  __NoxVar_value_type decl_type = NONE_VALUE;
+  __NoxValue_BOOLEAN_TYPE explicit_t = 
+      __NoxBool_FALSE_VALUE;
+  if (__NoxParser_match(p, PIPE, 0)) {
+    explicit_t = __NoxBool_TRUE_VALUE;
+    const __NoxToken__* t =
+      __NoxParser_advance(p, 1);
+
+    if (__NoxParser_expect(
+      p, 
+      IDENTIFIER, 
+      "invalid type '%.*s'",
+      t->length, t->start))
+    {
+      char* key = (char*)malloc(t->length + 1);
+      if (key == NULL)
+        { __NoxParser_ast_free(identifier); return NULL; }
+
+      memcpy(key, t->start, t->length);;
+      key[t->length] = '\0';
+      if (
+        t->length == 3 &&
+        strcmp(key, "int") == 0
+      ) {
+        decl_type = INT_VALUE;
+      }
+      else if (
+        t->length == 5 &&
+        strcmp(key, "float") == 0
+      ) {
+        decl_type = FLOAT_VALUE;
+      }
+      else if (
+        t->length == 6 &&
+        strcmp(key, "string") == 0
+      ) {
+        decl_type = STRING_VALUE;
+      }
+      else if (
+        t->length == 4 &&
+        strcmp(key, "null") == 0
+      ) {
+        decl_type = NULL_VALUE;
+      }
+      else if (
+        t->length == 4 && 
+        strcmp(key, "bool") == 0
+      ) {
+        decl_type = BOOL_VALUE;
+      }
+      else {
+        __NoxError__* e =
+          __NoxParser_create_error(
+            p,
+            ERROR_TYPE,
+            t->line,
+            t->column,
+            t->column + t->length,
+            "unknown type '%s'",
+            key
+          );
+
+        __NoxError_free(e);
+        __NoxParser_ast_free(identifier);
+        free(key);
+        return NULL;
+      }
+
+      free(key);
+      __NoxParser_advance(p, 1);
+    }
+    else {
+      __NoxParser_ast_free(identifier); 
+      return NULL;
+    }
+
+    if (!__NoxParser_expect(
+      p,
+      PIPE,
+      "expected '|'"
+    )) { __NoxParser_ast_free(identifier); return NULL; }
+    else {
+      __NoxParser_advance(p, 1);
+    }
+  }
 
   _NOX_DEBUG_LOG(
     DEBUG_INFO,
@@ -1130,13 +1221,71 @@ static inline __NoxAST_NODE*
   node->_type = AST_ASSIGNMENT;
   node->data.assignment.identifier = identifier;
   node->data.assignment.value = value;
+
+  node->data.assignment.explicit_type = explicit_t;
+  node->data.assignment.type = decl_type;
   return node;
 }
 
 
+/*
+- Função: __NoxParser_parse_program
+
+- Parâmetros:
+  @p        - Informações do parser
+
+- Objetivo:
+Avaliar um programa por completo, gerando
+nós AST a cada operação.
+
+- Funcionamento:
+1. Valida @p
+  Se não: retorna NULL
+
+2. Aloca o array nó AST principal em
+$main_node
+  Se NULL: retorna NULL
+
+3. Cria o array de nós AST em $main_node->statements
+  Se NULL: libera $main_node e retorna NULL
+
+4. Inicia o loop principal com condição de
+parada quando o token atual não existe ou
+seu tipo é EOF_TOKEN
+
+5. Pula tokens de tipo NEW_LINE
+
+6. Cria um nó AST e identifica seu tipo
+correspondente ao tipo do token atual,
+chamando a função correta para cada caso.
+  Se for NULL: libera $main_node e retorna NULL
+
+7. Adiciona o nó AST ao nó principal $main_node
+  Se não: libera $main_node->statements e $main_node
+    e retorna NULL
+
+8. Retorna $main_node
+
+- Consumo de tokens:
+  - Tokens de todas as outras funções de parsing
+
+- Retorno:
+  * Ponteiro para o nó AST de programa (array de nós AST, __NoxAST_PROGRAM*)
+  ! NULL
+*/
+
+/*
+!
+! ARRUMAR O PARSE_PRIMARY PARA NÃO IDENTIFICAR TIPOS!
+! O tipo deve ser declarado com "|(tipo)|", e quem
+! deve reconhecê-lo é o parse_statement
+!
+*/
 static inline void
   __NoxParser_program_destructor(void* element) {
-  __NoxAST_NODE* node = (__NoxAST_NODE*)element;
+  if (element == NULL) return;
+
+  __NoxAST_NODE* node = *(__NoxAST_NODE**)element;
   __NoxParser_ast_free(node);
 }
 
@@ -1213,7 +1362,7 @@ static inline __NoxAST_PROGRAM*
       "parse_program",
       "Index: %zu | Token: %s | Texto: '%s'\n",
       p->pos,
-      show_token(__NoxParser_peek(p, 0)),
+      __NoxDebug_show_token(__NoxParser_peek(p, 0)),
       (token[0] == '\n' ? "\\n" : token)
     );
     if (__NoxParser_match(p, NEW_LINE, 0)) {
@@ -1224,7 +1373,10 @@ static inline __NoxAST_PROGRAM*
     __NoxAST_NODE* node = NULL;
     if (
       __NoxParser_match(p, IDENTIFIER, 0) &&
-      __NoxParser_match(p, ASSIGN, 1)
+      (
+        __NoxParser_match(p, ASSIGN, 1) ||
+        __NoxParser_match(p, PIPE, 1)
+      )
     ) { _NOX_DEBUG_LOG(
           DEBUG_INFO,
           "PARSER",
@@ -1249,7 +1401,8 @@ static inline __NoxAST_PROGRAM*
             "parse_program",
             "iniciando 'parse_primary'\n"
           );
-          node = __NoxParser_parse_primary(p); }
+          node = __NoxParser_parse_primary(p); 
+        }
     
     _NOX_DEBUG_LOG(
       DEBUG_INFO,
@@ -1270,7 +1423,7 @@ static inline __NoxAST_PROGRAM*
         free(main_node);
         return NULL; }
 
-    if (!__NoxDynaArr_push(main_node->statements, node, sizeof(__NoxAST_NODE*)))
+    if (!__NoxDynaArr_push(main_node->statements, &node, sizeof(__NoxAST_NODE*)))
       { _NOX_DEBUG_LOG(
           DEBUG_ERROR,
           "PARSER",
@@ -1283,6 +1436,8 @@ static inline __NoxAST_PROGRAM*
         return NULL; }
   }
 
+  // DEBUG FINAL
+  __NoxDebug_show_program(main_node);
   return main_node;
 }
 // =======================

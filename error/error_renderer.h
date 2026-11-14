@@ -10,16 +10,31 @@
 static inline __NoxValue_BOOLEAN_TYPE
   __NoxError_render_line(__NoxError__* e, __NoxError_source* s)
   {
-    printf("VALID: %d\n",
-        __NoxError_is_valid(e, __NoxBool_TRUE_VALUE));
+    _NOX_DEBUG_LOG(
+      DEBUG_INFO,
+      "RENDERER",
+      "render_line",
+      "VALID: %d\n",
+        __NoxError_is_valid(e, __NoxBool_TRUE_VALUE)
+    );
 
-    printf("SOURCE: %d\n",
-        __NoxError_is_source_valid(s));
+    _NOX_DEBUG_LOG(
+      DEBUG_INFO,
+      "RENDERER",
+      "render_line",
+      "SOURCE: %d\n",
+        __NoxError_is_source_valid(s)
+    );
 
-    printf("POSITION: %d\n",
-        __NoxError_is_pos_valid(
-            e, s->line->length
-        ));
+    _NOX_DEBUG_LOG(
+      DEBUG_INFO,
+      "RENDERER",
+      "render_line",
+      "POSITION: %d\n",
+      __NoxError_is_pos_valid(
+        e, s->line->length
+      )
+    );
     
     if (!__NoxError_is_valid(e, __NoxBool_TRUE_VALUE) ||
         !__NoxError_is_source_valid(s) ||

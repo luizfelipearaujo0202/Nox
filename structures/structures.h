@@ -38,6 +38,9 @@ extern unsigned int _NOX_DEBUG_ENABLED;
       printf(__VA_ARGS__); \
     } \
   } while (0)
+
+#define _NOX_DEBUG_TREE(branch, ...) \
+  printf("[DEBUG - %s] " branch "\n", __func__, ##__VAR_ARGS__);
 // ===============
 
 // ==== DYNAMIC ARRAY ====
@@ -97,12 +100,13 @@ STAR_ASSIGN, // '*='
 SLASH_ASSIGN, // '/='
 PERCENT_ASSIGN, // '%='
 
-SHOW_LINE, //
+SHOW_LINE, // função de mostrar mensagem
 
 LPAREN, // '('
 RPAREN, // ')'
 LBRACE, // '{'
 RBRACE, // '}'
+PIPE, // '|'
 
 IF,
 ELSE, 

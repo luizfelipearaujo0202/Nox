@@ -229,3 +229,22 @@ static inline int
 
     return -1;
   }
+
+static inline int
+  __NoxDynaArr_find_last(__NoxDynaArr__* arr,
+    const void* criteria) {
+    if (!__NoxDynaArr_is_valid(arr) ||
+        arr->comparator == NULL ||
+        criteria == NULL)
+      { return -1; }
+
+    for (size_t i = arr->count-1; i != 0; i--)
+    {
+      void* object =
+        (char*)arr->data + i * arr->element_size;
+      if (arr->comparator(object, criteria))
+        { return i; }
+    }
+
+    return -1;
+  }

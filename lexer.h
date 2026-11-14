@@ -194,15 +194,80 @@ static inline __NoxToken__ __NoxLexer_next(__NoxLexer_pos* p) {
     p->pos++;
     p->column++;
   }
+  else if (c == '|') {
+    t._type = PIPE;
+    p->pos++;
+    p->column++;
+  }
 
 
   else if (isdigit((unsigned char)c)) {
     t._type = LITERAL;
     t._literal_type = VALUE_INT_LITERAL;
+    int has_dot = 0;
 
-    while (isdigit((unsigned char)p->source[p->pos])) {
-      p->pos++;
-      p->column++;
+    while (p->source[p->pos] != '\0') {
+      unsigned char c = (unsigned char)p->source[p->pos];
+
+      if (isdigit(c)) {
+        p->pos++;
+        p->column++;
+        continue;
+      }
+
+      else if (p->source[p->pos] == '.') {
+        if (!has_dot) {
+          has_dot = 1;
+          t._literal_type = VALUE_FLOAT_LITERAL;
+          p->pos++;
+          p->column++;
+          continue;
+        } else {
+          t.length = &p->source[p->pos] - t.start;
+          char msg[256];
+          snprintf(msg, sizeof(msg),
+            "multiple decimal points in numeric literal '%.*s'",
+            (int)t.length, t.start
+          );
+
+          __NoxError__* e =
+            __NoxError_create(
+            ERROR_LEXER,
+            msg,
+            t.line,
+            t.column,
+            t.column + t.length
+          );
+
+          if (e == NULL)
+            {
+              _NOX_DEBUG_LOG(
+                DEBUG_ERROR, "LEXER",
+                "next", "criação do erro falhou\n"
+              );
+            }
+
+          else if (!__NoxError_register(
+              p->errors->registry,
+              e,
+              __NoxBool_TRUE_VALUE
+            ))
+            {
+              _NOX_DEBUG_LOG(
+                DEBUG_ERROR, "LEXER",
+                "next", "criação do registro falhou\n"
+              );
+            }
+
+          __NoxError_free(e);
+          t._type = INVALID_TOKEN;
+          t._literal_type = VALUE_NONE;
+          return t;
+        }
+      }
+      else {
+        break;
+      };
     }
   }
   // STRING
