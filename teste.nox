@@ -1,4 +1,1 @@
-x = 10
-x|string| = "eitcha"
-y = 5
-x = y
+a|string| = 1

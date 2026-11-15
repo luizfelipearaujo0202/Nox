@@ -3,6 +3,7 @@
 #include "debug.h"
 
 #include "error.h"
+#include "error/error_aux.h"
 #include "error/error_registry.h"
 #include "error/error_structures.h"
 
@@ -38,10 +39,11 @@ static inline __NoxValue_BOOLEAN_TYPE
     else return __NoxBool_FALSE_VALUE;
   }
 
-static inline __NoxError__*
+static inline __NoxValue_BOOLEAN_TYPE
 __NoxExec_create_error(
     __NoxExec_context* c,
     __NoxError_TYPE type,
+    __NoxError_note* note,
     int line,
     int c_start,
     int c_end,
@@ -49,13 +51,16 @@ __NoxExec_create_error(
     ...
 ) {
   if (!__NoxExec_context_is_valid(c))
-    { return NULL; }
+    { return __NoxBool_FALSE_VALUE; }
   if (
     c->errors == NULL ||
     c->errors->registry == NULL ||
     format == NULL
   )
-    { return NULL; }
+    { return __NoxBool_FALSE_VALUE; }
+
+  if (note != NULL && !__NoxError_note_is_valid(note))
+    { return __NoxBool_FALSE_VALUE; }
 
   char msg[512];
   va_list args;
@@ -68,23 +73,79 @@ __NoxExec_create_error(
     msg,
     line,
     c_start,
-    c_end
+    c_end,
+    note
   );
   if (e == NULL)
-    { return NULL; }
+    { return __NoxBool_FALSE_VALUE; }
 
-  if (!__NoxError_register(
+  __NoxError_register(
     c->errors->registry,
     e,
     __NoxBool_TRUE_VALUE
-  )) {
-    __NoxError_free(e);
-    return NULL;
-  }
-  return e;
+  );
+
+  __NoxError_free(e);
+
+  return __NoxBool_TRUE_VALUE;
 }
 
 // =======================
+
+// forward declaration to eval_operand function
+static inline __NoxExec_CALC_RESULT
+  __NoxExec_calculate(__NoxExec_context* c);
+
+static inline __NoxExec_CALC_STATUS
+  __NoxExec_eval_operand(
+    __NoxExec_context* c,
+    __NoxAST_NODE* operand,
+    long* out_val
+  ) {
+  if (operand == NULL) return CALC_INVALID_ACCESS;
+
+  if (operand->_type == AST_BINARY) {
+      __NoxExec_context sub_ctx = *c;
+      sub_ctx.node = operand;
+      __NoxExec_CALC_RESULT res = __NoxExec_calculate(&sub_ctx);
+      if (res.status != CALC_OK) return res.status;
+      *out_val = res.result;
+      return CALC_OK;
+  }
+
+  if (operand->_type == AST_LITERAL) {
+      if (operand->data.token->_literal_type != VALUE_INT_LITERAL) {
+          return CALC_A_NOT_NUMBER;
+      }
+      *out_val = strtol(operand->data.token->start, NULL, 10);
+      return CALC_OK;
+  }
+
+  if (operand->_type == AST_IDENTIFIER) {
+      __NoxToken__* t = operand->data.token;
+      char key[t->length + 1];
+      memcpy(key, t->start, t->length);
+      key[t->length] = '\0';
+
+      __NoxVar__* var = __NoxVar_HashTable_get(c->table, key);
+      if (var == NULL) {
+          __NoxExec_create_error(c, ERROR_RUNTIME, NULL,
+              t->line, t->column, t->column + t->length,
+              "variable '%s' not declared", key);
+          return CALC_A_NOT_NUMBER;
+      }
+      if (var->value == NULL || var->value->_t != INT_VALUE) {
+          __NoxExec_create_error(c, ERROR_TYPE, NULL,
+              t->line, t->column, t->column + t->length,
+              "variable '%s' is not an integer", key);
+          return CALC_A_NOT_NUMBER;
+      }
+      *out_val = var->value->_v.v_int;
+      return CALC_OK;
+  }
+  return CALC_INVALID_AST_TYPE;
+}
+
 
 static inline __NoxExec_CALC_RESULT
 __NoxExec_calculate(__NoxExec_context* c)
@@ -125,22 +186,6 @@ __NoxExec_calculate(__NoxExec_context* c)
     return r;
   }
 
-  __NoxExec_context left_side = {
-    .program = c->program,
-    .index = c->index,
-    .node = node->data.binary.left,
-    .table = c->table,
-    .errors = c->errors
-  };
-  
-  __NoxExec_context right_side = {
-    .program = c->program,
-    .index = c->index,
-    .node = node->data.binary.right,
-    .table = c->table,
-    .errors = c->errors
-  };
-
   if (node->_type != AST_BINARY) {
     _NOX_DEBUG_LOG(DEBUG_VERIFY, "EXECUTOR", "calculate", "argumentos [NOT BINARY]\n");
     r.status = CALC_INVALID_AST_TYPE;
@@ -163,90 +208,27 @@ __NoxExec_calculate(__NoxExec_context* c)
     )
   ) { r.status = CALC_INVALID_ACCESS; return r; }
 
-  __NoxExec_CALC_RESULT left_eval;
-  __NoxExec_CALC_RESULT right_eval;
-
   _NOX_DEBUG_LOG(DEBUG_VERIFY, "EXECUTOR", "calculate", "side's type:\n  Left: %s\n  Right: %s\n",
     __NoxDebug_show_ast_type(node->data.binary.left),
     __NoxDebug_show_ast_type(node->data.binary.right)
   );
 
-  if (node->data.binary.left->_type == AST_BINARY)
-  {
-    left_eval = __NoxExec_calculate(&left_side);
-    if (left_eval.status != CALC_OK)
-      { r.status = left_eval.status; return r; }
-  }
-  else if ( node->data.binary.left->_type == AST_LITERAL &&
-            node->data.binary.left->data.token->_literal_type != VALUE_INT_LITERAL)
-  { }
-  else
-  { r.status = CALC_A_NOT_NUMBER; return r; }
-
-  if (node->data.binary.right->_type == AST_BINARY)
-  {
-    right_eval = __NoxExec_calculate(&right_side);
-    if (right_eval.status != CALC_OK)
-      { r.status = right_eval.status; return r; }
-  }
-  else if ( node->data.binary.right->_type == AST_LITERAL &&
-            node->data.binary.right->data.token->_literal_type != VALUE_INT_LITERAL)
-  { r.status = CALC_B_NOT_NUMBER; return r; }
-
   long left = 0;
   long right = 0;
 
-  if (node->data.binary.left->_type == AST_LITERAL &&
-      node->data.binary.left->data.token->_literal_type != VALUE_INT_LITERAL)
-  {
-    if (node->data.binary.left->data.token == NULL ||
-        node->data.binary.left->data.token->start == NULL)
-      { r.status = CALC_INVALID_ACCESS; return r;}
-
-    size_t left_length = node->data.binary.left->data.token->length;  
-    char* left_str = (char*)malloc(left_length + 1);  
-    if (left_str == NULL)   
-      { r.status = CALC_OUT_OF_MEMORY;   
-        return r; }  
-
-    memcpy(left_str, node->data.binary.left->data.token->start, left_length);  
-    left_str[left_length] = '\0';  
-    left = strtol(left_str, NULL, 10);  
-    free(left_str);  
-
-    if (errno == ERANGE) {  
-      r.status = CALC_INVALID_ACCESS;  
-      return r;  
-    }
+  __NoxExec_CALC_STATUS st_left = 
+    __NoxExec_eval_operand(c, node->data.binary.left, &left);
+  if (st_left != CALC_OK) {
+      r.status = st_left;
+      return r;
   }
-  else if (node->data.binary.left->_type == AST_BINARY)
-  { left = left_eval.result; }
 
-  if (node->data.binary.right->_type == AST_LITERAL &&
-      node->data.binary.right->data.token->_literal_type != VALUE_INT_LITERAL)
-  {
-    if (node->data.binary.right->data.token == NULL ||
-        node->data.binary.right->data.token->start == NULL)
-      { r.status = CALC_INVALID_ACCESS; return r;}
-
-    size_t right_length = node->data.binary.right->data.token->length;  
-    char* right_str = (char*)malloc(right_length + 1);  
-    if (right_str == NULL)  
-      { r.status = CALC_OUT_OF_MEMORY;   
-        return r; }  
-
-    memcpy(right_str, node->data.binary.right->data.token->start, right_length);  
-    right_str[right_length] = '\0';  
-    right = strtol(right_str, NULL, 10);  
-    free(right_str);  
-
-    if (errno == ERANGE) {  
-      r.status = CALC_INVALID_ACCESS;  
-      return r;  
-    }
+  __NoxExec_CALC_STATUS st_right =
+    __NoxExec_eval_operand(c, node->data.binary.right, &right);
+  if (st_right != CALC_OK) {
+      r.status = st_right;
+      return r;
   }
-  else if (node->data.binary.right->_type == AST_BINARY)
-  { right = right_eval.result; }
 
   long res = 0;
 
@@ -261,13 +243,77 @@ __NoxExec_calculate(__NoxExec_context* c)
     { res = left * right; }
   else if (node->data.binary.op == AST_DIVIDE)
   { 
-    if (right == 0) 
-      { r.status = CALC_DIVISION_BY_ZERO; return r; }
+    const __NoxToken__* t =
+      t = node->data.binary.right->data.token;
+
+    if (left == 0)
+      { res = 0; }
+
+    else if (right == 0) {
+      __NoxExec_create_error(
+        c,
+        ERROR_EXPRESSION,
+        NULL,
+        t->line,
+        t->column,
+        t->column +
+          t->length,
+        "division by zero"
+      );
+      r.status = CALC_DIVISION_BY_ZERO; 
+      return r; 
+    }
     else 
       { res = left / right; } 
   }
-  else 
-    { r.status = CALC_INVALID_EXPRESSION; return r; }
+  else if (node->data.binary.op == AST_MODULE)
+  {
+    const __NoxToken__* t =
+      t = node->data.binary.right->data.token;
+
+    if (left == 0)
+      { res = 0; }
+
+    else if (right == 0) {
+      __NoxExec_create_error(
+        c,
+        ERROR_EXPRESSION,
+        NULL,
+        t->line,
+        t->column,
+        t->column +
+          t->length,
+        "division by zero"
+      );
+      r.status = CALC_DIVISION_BY_ZERO; 
+      return r; 
+    }
+    else 
+      { res = left % right; } 
+  }
+  else {
+    const __NoxToken__* t =
+      node->data.binary.left->data.token;
+
+    if (!__NoxExec_create_error(
+      c,
+      ERROR_EXPRESSION,
+      NULL,
+      t->line,
+      t->column,
+      0,
+      "division by zero"
+    )) {
+      _NOX_DEBUG_LOG(
+        DEBUG_ERROR,
+        "EXECUTOR",
+        "calculate",
+        "erro de divisão por 0 não registrado\n"
+      );
+    }
+    r.status = CALC_INVALID_EXPRESSION; 
+    return r; 
+  }
 
   r.result = res;
   _NOX_DEBUG_LOG(DEBUG_VERIFY, "EXECUTOR", "calculate", "\n");
@@ -360,27 +406,32 @@ __NoxExec_read_identifier(__NoxExec_context* c)
         "read_identifier",
         "criando erro de runtime"
       );
-      __NoxError__* e =
-        __NoxExec_create_error(
-          c,
-          ERROR_RUNTIME,
-          t->line,
-          t->column,
-          t->column +
-            t->length,
-          "variable '%.*s' not declared",
-          (int)t->length, key
+      if (!__NoxExec_create_error(
+        c,
+        ERROR_RUNTIME,
+        NULL,
+        t->line,
+        t->column,
+        t->column +
+          t->length,
+        "variable '%.*s' not declared",
+        (int)t->length, key
+      )) {
+        _NOX_DEBUG_LOG(
+          DEBUG_VERIFY,
+          "",
+          "",
+          ": ERROR\n"
         );
-
-      _NOX_DEBUG_LOG(
-        DEBUG_VERIFY,
-        "",
-        "",
-        ": %p\n",
-        (void*)e
-      );
-
-      __NoxError_free(e);
+      }
+      else {
+        _NOX_DEBUG_LOG(
+          DEBUG_VERIFY,
+          "",
+          "",
+          ": OK\n"
+        );
+      }
     }
     free(key);
     return NULL;
@@ -476,27 +527,31 @@ __NoxExec_read_value(__NoxExec_context* c)
         "read_value",
         "criando erro de runtime"
       );
-      __NoxError__* e =
-        __NoxExec_create_error(
-          c,
-          ERROR_RUNTIME,
-          t->line,
-          t->column,
-          t->column +
-            t->length,
-          "variable '%.*s' not declared",
-          (int)t->length, key
+
+      if (!__NoxExec_create_error(
+        c,
+        ERROR_RUNTIME,
+        NULL,
+        t->line,
+        t->column,
+        t->column +
+          t->length,
+        "variable '%.*s' not declared",
+        (int)t->length, key
+      )) {
+        _NOX_DEBUG_LOG(
+          DEBUG_VERIFY,
+          "", "",
+          ": ERROR\n"
         );
-
-      _NOX_DEBUG_LOG(
-        DEBUG_VERIFY,
-        "",
-        "",
-        ": %p\n",
-        (void*)e
-      );
-
-      __NoxError_free(e);
+      }
+      else {
+        _NOX_DEBUG_LOG(
+          DEBUG_VERIFY,
+          "", "",
+          ": OK\n"
+        );
+      }
     }
     free(key);
     return NULL;
@@ -560,11 +615,6 @@ __NoxExec_write_identifier(__NoxExec_context* c)
     node->data.assignment.value == NULL
   ) { return __NoxBool_FALSE_VALUE; }
 
-  if (
-    node->data.assignment.identifier->data.token == NULL ||
-    node->data.assignment.value->data.token == NULL
-  ) { return __NoxBool_FALSE_VALUE; }
-
   size_t key_len = node->data.assignment.identifier->data.token->length;
   char* key = (char*)malloc(key_len + 1);
   if (key == NULL)
@@ -572,15 +622,40 @@ __NoxExec_write_identifier(__NoxExec_context* c)
   memcpy(key, node->data.assignment.identifier->data.token->start, key_len);
   key[key_len] = '\0';
 
-  size_t value_len = node->data.assignment.value->data.token->length;
-  char* value_str = (char*)malloc(value_len + 1);
-  if (value_str == NULL)
+  char* value_str = NULL;
+  __NoxVar_value* value = NULL;
+
+  // Verifica operações matemáticas vindo do value
+  if (node->data.assignment.value->_type == AST_BINARY)
+  { c->node = node->data.assignment.value;
+    __NoxExec_CALC_RESULT res =
+      __NoxExec_calculate(c); 
+    c->node = node;
+
+    if (res.status != CALC_OK) {
+      free(key);
+      return __NoxBool_FALSE_VALUE;
+    }
+
+    value = __NoxVar_value_create(
+      INT_VALUE,
+      (__NoxVar_v){
+        .v_int = res.result
+      }
+    );
+  }
+  else if (node->data.assignment.value->data.token == NULL)
     { free(key);
       return __NoxBool_FALSE_VALUE; }
-  memcpy(value_str, node->data.assignment.value->data.token->start, value_len);
-  value_str[value_len] = '\0';
-
-  __NoxVar_value* value = NULL;
+  else {
+    size_t value_len = node->data.assignment.value->data.token->length;
+    value_str = (char*)malloc(value_len + 1);
+    if (value_str == NULL)
+      { free(key);
+        return __NoxBool_FALSE_VALUE; }
+    memcpy(value_str, node->data.assignment.value->data.token->start, value_len);
+    value_str[value_len] = '\0';
+  }
 
   /*
   Verifica se uma variável utilizada no valor existe
@@ -589,7 +664,11 @@ __NoxExec_write_identifier(__NoxExec_context* c)
     __NoxBool_FALSE_VALUE; // Verifica se valor é de var existente
   __NoxVar__* existing_var = NULL;
   if (
-    node->data.assignment.value->data.token->_type == IDENTIFIER
+    node->data.assignment.value->_type == AST_IDENTIFIER || 
+    (
+      node->data.assignment.value->_type == AST_LITERAL && 
+      node->data.assignment.value->data.token->_type == IDENTIFIER
+    )
   ) { 
     existing_var = __NoxExec_read_value(c);
     if (existing_var != NULL) {
@@ -600,18 +679,36 @@ __NoxExec_write_identifier(__NoxExec_context* c)
       if (c->errors != NULL && c->errors->registry != NULL) {
         __NoxToken__* t =
           node->data.assignment.value->data.token;
-        __NoxError__* e =
-          __NoxExec_create_error(
-            c,
-            ERROR_NAME,
-            t->line,
-            t->column,
-            t->column + t->length,
-            "use of undefined identifier '%.*s'",
-            (int)t->length, t->start
-          );
 
-        __NoxError_free(e);
+        _NOX_DEBUG_LOG(
+          DEBUG_INFO,
+          "EXECUTOR",
+          "write_identifier",
+          "criando erro de nome"
+        );
+        if (!__NoxExec_create_error(
+          c,
+          ERROR_NAME,
+          NULL,
+          t->line,
+          t->column,
+          t->column + t->length,
+          "use of undefined identifier '%.*s'",
+          (int)t->length, t->start
+        )) {
+          _NOX_DEBUG_LOG(
+            DEBUG_VERIFY,
+            "", "",
+            ": ERROR\n"
+          );
+        }
+        else {
+          _NOX_DEBUG_LOG(
+            DEBUG_VERIFY,
+            "", "",
+            ": OK\n"
+          );
+        }
       }
 
       free(key);
@@ -619,7 +716,7 @@ __NoxExec_write_identifier(__NoxExec_context* c)
       return __NoxBool_FALSE_VALUE;
     }
   }
-  else {
+  else if (node->data.assignment.value->_type == AST_LITERAL) {
     switch (node->data.assignment.value->data.token->_literal_type)
     {
       case VALUE_NONE: {
@@ -694,76 +791,131 @@ __NoxExec_write_identifier(__NoxExec_context* c)
     "coletando variável existente:\n"
   );
   __NoxVar__* existing = __NoxVar_HashTable_get(c->table, key);
+  __NoxValue_BOOLEAN_TYPE explicit_t =
+    __NoxBool_FALSE_VALUE;
+  __NoxVar_value_type decl_type = NONE_VALUE;
+  const __NoxToken__* t = 
+    node->data.assignment.identifier->data.token;
+  const __NoxToken__* v =
+    node->data.assignment.value->data.token;
 
   __NoxDebug_show_var(existing);
 
-  if (existing != NULL && existing->explicit_type) {
-    if (existing->declared_type != value->_t) {
-      // MISMATCH!
-      /*
-      Variável com tipo declarado explicitamente recebendo
-      atribuição de tipo diferente
-      */
-      _NOX_DEBUG_LOG(
-        DEBUG_ERROR,
-        "EXECUTOR",
-        "write_identifier",
-        "Mismatch de tipo: '%s' em variável de tipo '%s'\n",
-        __NoxDebug_value_type_name(value->_t),
-          __NoxDebug_value_type_name(existing->declared_type)
-      );
-      const __NoxToken__* t =
-        node->data.assignment.value->data.token;
-      __NoxError__* e = __NoxExec_create_error(
-          c, ERROR_RUNTIME, 
-          t->line,
-          t->column,
-          t->column + t->length,
-          "cannot assign type '%s' to fixed variable '%s' of type '%s'",
-          __NoxDebug_value_type_name(value->_t),
-          key,
-          __NoxDebug_value_type_name(existing->declared_type)
+  if (node->data.assignment.explicit_type) {
+    explicit_t = __NoxBool_TRUE_VALUE;
+    decl_type = node->data.assignment.type;
+  }
+  else if (existing != NULL) {
+    explicit_t = existing->explicit_type;
+    decl_type = existing->declared_type;
+  }
+
+  if (
+    explicit_t && 
+    decl_type != value->_t
+  ) {
+    // MISMATCH!
+    /*
+    Variável com tipo declarado explicitamente recebendo
+    atribuição de tipo diferente
+    */
+    _NOX_DEBUG_LOG(
+      DEBUG_ERROR,
+      "EXECUTOR",
+      "write_identifier",
+      "Mismatch de tipo: '%s' em variável de tipo '%s'\n",
+      __NoxDebug_value_type_name(value->_t),
+        __NoxDebug_value_type_name(existing->declared_type)
+    );
+
+    /*
+    !CRIAR NOTA DO ERRO!!
+    ! "note: declared before here:"
+    ! 2 | x|int| = 5
+    !       ^^^
+    */
+
+    _NOX_DEBUG_LOG(
+      DEBUG_INFO,
+      "EXECUTOR",
+      "write_identifier",
+      "criando nota\n"
+    );
+    __NoxError_note* note = NULL;
+
+    if (existing != NULL && existing->token != NULL) {
+      __NoxError_create_note(
+        "declared before here",
+        existing->token->line,
+        existing->token->column,
+        existing->token->column +
+          existing->token->length
       );
 
       _NOX_DEBUG_LOG(
         DEBUG_VERIFY,
         "EXECUTOR",
         "write_identifier",
-        "erro criado: %p\n",
-        (void*)e
+        "nota criada: %p\n",
+        (void*)note
       );
-
-      if (e) __NoxError_free(e);
-      
-      // Limpa o value novo que não vai ser usado
-      if (!is_shared) {
-          __NoxVar_value_clear(value);
-          free(value);
-      }
-      free(key);
-      free(value_str);
-      return __NoxBool_FALSE_VALUE;
     }
-  }
-  __NoxVar__* new_var = NULL;
-  if (existing != NULL) {
-    new_var = __NoxVar_create(
-      key,
-      value,
-      existing->explicit_type,
-      existing->declared_type,
-      NULL
+    _NOX_DEBUG_LOG(
+      DEBUG_INFO,
+      "EXECUTOR",
+      "write_identifier",
+      "criando erro de runtime"
     );
-  }
-  else {
-    new_var = __NoxVar_create(
+    if(!__NoxExec_create_error(
+      c, ERROR_TYPE, 
+      note,
+      t->line,
+      v->column,
+      v->column + v->length,
+      "cannot assign type '%s' to fixed variable '%s' of type '%s'",
+      __NoxDebug_value_type_name_lower(value->_t),
       key,
-      value,
-      node->data.assignment.explicit_type,
-      node->data.assignment.type,
-      NULL
+      __NoxDebug_value_type_name_lower(decl_type)
+    )) {
+      _NOX_DEBUG_LOG(
+        DEBUG_VERIFY,
+        "", "",
+        ": ERROR\n"
+      );
+    }
+    else {
+      _NOX_DEBUG_LOG(
+        DEBUG_VERIFY,
+        "", "",
+        ": OK\n"
+      );
+    }
+
+    _NOX_DEBUG_LOG(
+      DEBUG_INFO,
+      "EXECUTOR",
+      "write_identifier",
+      "erro criado"
     );
+    
+    // Limpa o value novo que não vai ser usado
+    if (!is_shared) {
+        __NoxVar_value_clear(value);
+        free(value);
+    }
+    free(key);
+    free(value_str);
+    return __NoxBool_FALSE_VALUE;
   }
+  __NoxVar__* new_var = __NoxVar_create(
+    key,
+    value,
+    explicit_t,
+    decl_type,
+    t,
+    NULL
+  );
+
   if (new_var == NULL) {
       if (!is_shared) { __NoxVar_value_clear(value); free(value); }
       free(key); free(value_str);

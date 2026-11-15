@@ -341,6 +341,7 @@ static inline __NoxValue_BOOLEAN_TYPE
             old_current->value,
             old_current->explicit_type,
             old_current->declared_type,
+            old_current->token,
             NULL
           );
 
@@ -481,6 +482,8 @@ static inline __NoxValue_BOOLEAN_TYPE
 
             __NoxVar_value_release(found->value);
             found->value = v;
+            found->explicit_type = var->explicit_type;
+            found->declared_type = var->declared_type;
 
             return __NoxBool_TRUE_VALUE;
         }
@@ -512,6 +515,7 @@ static inline __NoxValue_BOOLEAN_TYPE
             var->value,
             var->explicit_type,
             var->declared_type,
+            var->token,
             NULL
         );
 

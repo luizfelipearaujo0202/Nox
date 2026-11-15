@@ -6,6 +6,7 @@
 
 #include "error_aux.h"
 #include "../structures/structures.h"
+#include "error_structures.h"
 
 static inline __NoxValue_BOOLEAN_TYPE
   __NoxError_render_line(__NoxError__* e, __NoxError_source* s)
@@ -80,6 +81,91 @@ static inline __NoxValue_BOOLEAN_TYPE
     }
 
     printf("\n");
+
+    // Note rendering
+    _NOX_DEBUG_LOG(
+      DEBUG_INFO,
+      "RENDERER",
+      "render_line",
+      "verificando se existem notas"
+    );
+    if (e->notes != NULL && e->notes->data->count > 0)
+    {
+      _NOX_DEBUG_LOG(
+        DEBUG_INFO,
+        "", "",
+        ": EXISTEM\n"
+      );
+
+      for (size_t k = 0; k < e->notes->data->count; k++) {
+        _NOX_DEBUG_LOG(
+          DEBUG_INFO,
+          "RENDERER",
+          "render_line",
+          "índice atual: %zu\n",
+          k
+        );
+        __NoxError_note* note = *(__NoxError_note**)
+          __NoxDynaArr_get(e->notes->data, k);
+        
+        _NOX_DEBUG_LOG(
+          DEBUG_VERIFY,
+          "RENDERER",
+          "render_line",
+          "nota: %p\n",
+          (void*)note
+        );
+
+        if (note == NULL) continue;                               
+
+        printf(" note: %s:\n", note->msg);
+
+        _NOX_DEBUG_LOG(
+          DEBUG_INFO,
+          "RENDERER",
+          "render_line",
+          "coletando source_line"
+        );
+
+        __NoxError_source_line* note_sl = 
+          __NoxError_get_source_line(s->src, note->line); 
+
+        if (note_sl != NULL) {
+          _NOX_DEBUG_LOG(
+            DEBUG_VERIFY,
+            "", "",
+            ": OK\n"
+          );
+          char* note_src = (char*)malloc(note_sl->length + 1);
+          if (note_src != NULL) {
+            memcpy(note_src, s->src + note_sl->start, note_sl->length);
+            note_src[note_sl->length] = '\0';
+
+            printf(" %d | %s\n", note->line, note_src);
+              free(note_src); 
+          }
+          free(note_sl);
+        }
+        else {
+          _NOX_DEBUG_LOG(
+            DEBUG_VERIFY,
+            "", "",
+            ": ERROR\n"
+          );
+        }
+      }
+    }
+    else {
+      _NOX_DEBUG_LOG(
+        DEBUG_VERIFY,
+        "","",
+        ": NÃO EXISTEM"
+      );
+    }
+    _NOX_DEBUG_LOG(
+      DEBUG_INFO,
+      "", "","\n"
+    );
 
     return __NoxBool_TRUE_VALUE;
   }

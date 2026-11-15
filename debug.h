@@ -162,6 +162,20 @@ __NoxDebug_value_type_name(__NoxVar_value_type type) {
 }
 
 static inline const char*
+__NoxDebug_value_type_name_lower(__NoxVar_value_type type) {
+  switch (type) {
+    case NONE_VALUE:   return "none";
+    case NULL_VALUE:   return "null";
+    case INT_VALUE:    return "int";
+    case FLOAT_VALUE:  return "float";
+    case STRING_VALUE: return "string";
+    case BOOL_VALUE:   return "bool";
+    default:           return "unknown";
+  }
+}
+
+
+static inline const char*
 __NoxDebug_ast_type_name(__NoxAST_TYPE type) {
   switch (type) {
     case AST_LITERAL:     return "LITERAL";
@@ -207,6 +221,20 @@ __NoxDebug_literal_type_name(__NoxToken_LITERAL_TYPE type) {
     case VALUE_FALSE:         return "FALSE";
     case VALUE_NULL_LITERAL:  return "NULL";
     default:                  return "UNKNOWN";
+  }
+}
+
+static inline const char*
+__NoxDebug_literal_type_name_lower(__NoxToken_LITERAL_TYPE type) {
+  switch (type) {
+    case VALUE_NONE:          return "none";
+    case VALUE_INT_LITERAL:   return "int";
+    case VALUE_FLOAT_LITERAL: return "float";
+    case VALUE_STRING_LITERAL:return "string";
+    case VALUE_TRUE:          return "true";
+    case VALUE_FALSE:         return "false";
+    case VALUE_NULL_LITERAL:  return "null";
+    default:                  return "unknown";
   }
 }
 

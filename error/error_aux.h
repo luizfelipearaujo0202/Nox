@@ -95,7 +95,9 @@ static inline const char*
       case ERROR_SEMANTIC: return "SemanticError";
       case ERROR_TYPE: return "TypeError";
       case ERROR_NAME: return "NameError";
+      case ERROR_VALUE: return "ValueError";
       case ERROR_RUNTIME: return "RuntimeError";
+      case ERROR_EXPRESSION: return "ExpressionError";
     }
     return "";
   }
@@ -127,3 +129,51 @@ static inline __NoxValue_BOOLEAN_TYPE
         { return __NoxBool_TRUE_VALUE; }
     }
     return __NoxBool_FALSE_VALUE; }
+
+
+static inline __NoxValue_BOOLEAN_TYPE
+  __NoxError_note_is_valid(
+    __NoxError_note* n
+  ) {
+  if (n == NULL) 
+    { return __NoxBool_FALSE_VALUE; }
+
+  else if (n->msg == NULL)
+    { return __NoxBool_FALSE_VALUE; }
+
+  if (
+    n->line <= 0 ||
+    n->column_start <= 0 ||
+    n->column_end < 0
+  ) { return __NoxBool_FALSE_VALUE; }
+
+  return __NoxBool_TRUE_VALUE;
+}
+
+static inline __NoxError_note*
+  __NoxError_create_note(
+    const char* msg,
+    int line,
+    int c_start,
+    int c_end
+  ) {
+  if (msg == NULL) return NULL;
+
+  __NoxError_note* note = 
+    (__NoxError_note*)
+    malloc(sizeof(__NoxError_note));
+
+  if (note == NULL) return NULL;
+
+  if (line <= 0 || c_start <= 0 || c_end < 0)
+    { return NULL; }
+
+  note->msg = strdup(msg);
+  if (note->msg == NULL) return NULL;
+
+  note->column_start = c_start;
+  note->column_end = c_end;
+  note->line = line;
+
+  return note;
+}

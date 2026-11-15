@@ -47,7 +47,8 @@ __NoxParser_create_error(
     msg,
     line,
     c_start,
-    c_end
+    c_end,
+    NULL
   );
   if (e == NULL)
     { return NULL; }
@@ -591,6 +592,9 @@ static inline __NoxAST_NODE*
         __NoxParser_ast_free(node);
         return NULL;
       }
+
+      __NoxParser_advance(p, 0);
+      return node;
     } 
     else { 
     if (error_ok) {
@@ -781,11 +785,15 @@ static inline __NoxAST_NODE*
     if (current == NULL)
       { return left; }
 
-    while(__NoxParser_is_operator(current, 0, 0, 1, 1, 0)) {
+    while(__NoxParser_is_operator(current, 0, 0, 1, 1, 1)) {
       __NoxAST_OPERATOR op;
       if (__NoxParser_is_operator(current, 0, 0, 1, 0, 0))
       { op = AST_MULTIPLY; }
-      else op = AST_DIVIDE;
+      else if (
+        __NoxParser_is_operator(current, 0, 0, 0, 1, 0)
+      )
+      { op = AST_DIVIDE; }
+      else {op = AST_MODULE;}
 
       __NoxParser_advance(p, 0);
 
@@ -933,6 +941,142 @@ static inline __NoxAST_NODE*
     }
     return left;
   }
+
+
+/*
+- Função: __NoxParser_parse_comparison
+
+- Parâmetros:
+  @p        - Informações do parser
+
+- Objetivo:
+Analisar uma condição e retornar um
+nó relativo a ela
+
+- Funcionamento:
+1. Valida @p
+  Se inválido: retorna NULL
+
+2. Obtém $left com __NoxParser_parse_expression
+  Se NULL: retorna NULL
+
+3. Coleta $current com __NoxParser_peek
+  Se NULL: retorna $left
+
+4. Inicia loop principal
+  - Identifica operador lógico
+  - Consome-o
+  - Obtém $right com __NoxParser_parse_expression
+    Se NULL: retorna NULL
+  - Aloca nó AST $node
+    Se NULL: retorna NULL
+  - Configura $node
+  - Atribui $node a $left
+  - Atribui o token atual a $current
+
+5. Retorna $left
+
+- Consumo de tokens:
+  - EQUAL
+  - NOT_EQUAL
+  - GREATER
+  - LESS
+  - GREATER_EQUAL
+  - LESS_EQUAL
+  - Tokens de __NoxParser_parse_expression
+
+- Retorno:
+  * Ponteiro para o nó AST (__NoxAST_NODE*)
+  ! NULL
+
+- Notas:
+  * Implementa associatividade à esquerda.
+  * Possui precendência menor que operadores aritméticos
+*/
+static inline __NoxAST_NODE*                                                                                           
+  __NoxParser_parse_comparison(parser_info* p)                                                                           
+  {                      
+    if (!__NoxParser_is_parserinfo_valid(p))
+      { return NULL; }
+
+    __NoxAST_NODE* left = __NoxParser_parse_expression(p);                                                             
+    if (left == NULL) return NULL;
+
+    __NoxToken__* current = __NoxParser_peek(p, 0);                                                                    
+    if (current == NULL) return left;                                                                                  
+
+    while (                                                                                                            
+      current->_type == EQUAL ||                                                                                     
+      current->_type == NOT_EQUAL ||
+      current->_type == LESS ||
+      current->_type == GREATER ||
+      current->_type == LESS_EQUAL ||
+      current->_type == GREATER_EQUAL
+    ) {
+      __NoxAST_OPERATOR op;
+      switch (current->_type) {                                                                                      
+        case EQUAL:         op = AST_EQUAL; break;
+        case NOT_EQUAL:     op = AST_NOT_EQUAL; break;
+        case LESS:          op = AST_LESS; break;                                                                  
+        case GREATER:       op = AST_GREATER; break;                                                               
+        case LESS_EQUAL:    op = AST_LESS_EQUAL; break;                                                            
+        case GREATER_EQUAL: op = AST_GREATER_EQUAL; break;                                                         
+          default: break;                                                                                            
+      }                                                                                                              
+
+      __NoxParser_advance(p, 0);
+
+      __NoxAST_NODE* right = __NoxParser_parse_expression(p);
+      if (right == NULL) 
+        { return NULL; }
+
+      __NoxAST_NODE* node = (__NoxAST_NODE*)
+        malloc(sizeof(__NoxAST_NODE));
+      if (node == NULL) 
+        { return NULL; }
+      node->_type = AST_BINARY;
+      node->data.binary.left = left;
+      node->data.binary.op = op;
+      node->data.binary.right = right;
+
+      left = node;
+      current = __NoxParser_peek(p, 0);
+    }
+
+    return left;
+  }
+
+
+
+/*
+- Função: __NoxParser_parse_condition
+
+- Parâmetros:
+  @p        - Informações do parser
+
+- Objetivo:
+Analisar e construir nós AST para uma
+condição
+
+- Funcionamento:
+
+- Consumo de tokens:
+  - Tokens de __NoxParser_parse_comparison
+
+- Retorno:
+  * Ponteiro para o nó AST (__NoxAST_NODE*)
+  ! NULL
+
+- Notas:
+  * Implementa associatividade à esquerda.
+*/
+
+static inline __NoxAST_NODE*
+  __NoxParser_parse_condition(
+    parser_info* p
+  ) {
+
+}
 
 /*
 - Função: __NoxParser_parse_statement

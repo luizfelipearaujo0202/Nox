@@ -25,8 +25,7 @@ static inline void __NoxError_regarray_destructor(void* element)
   if (e->error == NULL)
     { return; }
   
-  free(e->error->msg);
-  free(e->error);
+  __NoxError_free(e->error);
 }
 
 // NoxDynamicArray Copier
@@ -51,13 +50,32 @@ static inline __NoxValue_BOOLEAN_TYPE
   d->id = e->id;
   d->fatal = e->fatal;
 
+  __NoxError_note* note_copy = NULL;
+  if (e->error->notes != NULL && 
+      e->error->notes->data != NULL && 
+      e->error->notes->data->count > 0) {
+      
+      __NoxError_note* orig = *(__NoxError_note**)
+        __NoxDynaArr_get(e->error->notes->data, 0);
+      if (orig != NULL) {
+          note_copy = __NoxError_create_note(
+              orig->msg,
+              orig->line,
+              orig->column_start,
+              orig->column_end
+          );
+      }
+  }
+
   d->error = __NoxError_create(
     e->error->type,
     e->error->msg,
     e->error->line,
     e->error->column_start,
-    e->error->column_end
+    e->error->column_end,
+    note_copy
   );
+
 
   if (d->error == NULL)
     { return __NoxBool_FALSE_VALUE; }

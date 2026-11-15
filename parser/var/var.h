@@ -39,6 +39,8 @@ struct __NoxVar__ {
   __NoxValue_BOOLEAN_TYPE explicit_type;
   __NoxVar_value_type declared_type;
   __NoxVar_value* value;
+
+  __NoxToken__* token;
   struct __NoxVar__* next;
 } __NoxVar__;
 
@@ -154,11 +156,16 @@ static inline __NoxVar__*
     const __NoxVar_value* value,
     const __NoxValue_BOOLEAN_TYPE explicit_type,
     const __NoxVar_value_type decl_type,
+    const __NoxToken__* token,
     __NoxVar__* next
   )
 {
+  if (token == NULL)
+    { return NULL; }
+
   if (name == NULL ||
-      value == NULL)
+      value == NULL ||
+      token->start == NULL)
     { return NULL; }
 
   __NoxVar__* node =
@@ -184,6 +191,7 @@ static inline __NoxVar__*
   }
   node->explicit_type = explicit_type;
   node->declared_type = decl_type;
+  node->token = (__NoxToken__*)token;
   node->next = next;
   return node;
 }

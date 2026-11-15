@@ -17,13 +17,29 @@ struct {
   __NoxError_source_line* line;
 } __NoxError_source;
 
+  typedef
+struct {
+  char* msg;
+  int line;
+
+  int column_start;
+  int column_end;
+} __NoxError_note;
+
+  typedef
+struct {
+  __NoxDynaArr__* data;
+} __NoxError_note_array;
+
 typedef enum {
 ERROR_LEXER,
 ERROR_SYNTAX,
 ERROR_SEMANTIC,
 ERROR_TYPE,
 ERROR_NAME,
-ERROR_RUNTIME
+ERROR_VALUE,
+ERROR_RUNTIME,
+ERROR_EXPRESSION
 } __NoxError_TYPE;
 
   typedef 
@@ -34,6 +50,8 @@ struct {
 
   int column_start;
   int column_end;
+
+  __NoxError_note_array* notes;
 } __NoxError__;
 
   typedef

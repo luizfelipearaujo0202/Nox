@@ -236,7 +236,8 @@ static inline __NoxToken__ __NoxLexer_next(__NoxLexer_pos* p) {
             msg,
             t.line,
             t.column,
-            t.column + t.length
+            t.column + t.length,
+            NULL
           );
 
           if (e == NULL)
@@ -297,7 +298,8 @@ static inline __NoxToken__ __NoxLexer_next(__NoxLexer_pos* p) {
           msg,
           t.line,
           t.column,
-          t.column + t.length
+          t.column + t.length,
+          NULL
         );
 
         if (e == NULL)
@@ -340,7 +342,8 @@ static inline __NoxToken__ __NoxLexer_next(__NoxLexer_pos* p) {
           msg,
           t.line,
           t.column,
-          t.column + t.length
+          t.column + t.length,
+          NULL
         );
 
         if (e == NULL)
@@ -472,7 +475,8 @@ static inline __NoxToken__ __NoxLexer_next(__NoxLexer_pos* p) {
       msg,
       t.line,
       t.column,
-      t.column + t.length
+      t.column + t.length,
+      NULL
     );
 
     if (e == NULL)
