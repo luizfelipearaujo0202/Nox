@@ -3,9 +3,9 @@
 
 #include "var.h"
 #include "../../structures/structures.h"
+#include "../../mem_logger.h"
 
 #include <string.h>
-#include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -177,16 +177,16 @@ static inline __NoxValue_BOOLEAN_TYPE
       while (current != NULL) {
         __NoxVar__* next = 
           current->next;
-        free(current->name);
+        _NOX_FREE(current->name);
 
         __NoxVar_value_release(current->value);
 
-        free(current);
+        _NOX_FREE(current);
         current = next;
       }
     }
 
-    free(t->buckets);
+    _NOX_FREE(t->buckets);
     t->buckets = NULL;
     t->capacity = 0;
     t->count = 0;
@@ -200,7 +200,7 @@ static inline __NoxValue_BOOLEAN_TYPE
   {
     if (!__NoxVar_HashTable_clear(t))
       { return __NoxBool_FALSE_VALUE; }
-    free(t);
+    _NOX_FREE(t);
     return __NoxBool_TRUE_VALUE;
   }
 
@@ -226,7 +226,7 @@ static inline __NoxValue_BOOLEAN_TYPE
   if (cap == t->capacity)
     { return __NoxBool_TRUE_VALUE; }
 
-  void* data = realloc(
+  void* data = _NOX_REALLOC(
     t->buckets,
     cap * sizeof(__NoxVar__*)
   );
@@ -263,7 +263,7 @@ static inline __NoxVar_HashTable*
     { return NULL; }
 
   __NoxVar_HashTable* table = 
-    (__NoxVar_HashTable*)malloc \
+    (__NoxVar_HashTable*)_NOX_ALLOC \
       (sizeof(__NoxVar_HashTable));
 
   if (table == NULL)
@@ -289,7 +289,7 @@ static inline __NoxVar_HashTable*
 
   // Default table capacity: 4
   if (!__NoxVar_HashTable_realloc(table, capacity))
-    { free(table);
+    { _NOX_FREE(table);
       return NULL; }
 
   return table;
@@ -408,7 +408,7 @@ static inline __NoxValue_BOOLEAN_TYPE
 
     if (failed) {
       __NoxVar_HashTable_clear(new_t);
-      free(new_t);
+      _NOX_FREE(new_t);
 
       continue;
     }
@@ -425,7 +425,7 @@ static inline __NoxValue_BOOLEAN_TYPE
       t->hash_key[i] = new_t->hash_key[i];
     }
 
-    free(new_t);
+    _NOX_FREE(new_t);
 
     return __NoxBool_TRUE_VALUE;
   }
@@ -630,7 +630,7 @@ static inline __NoxValue_BOOLEAN_TYPE
       last->next = current->next;
     }
 
-    // Now 'current' is free, it can be
+    // Now 'current' is _NOX_FREE, it can be
     // released
     __NoxVar_free_single(current);
 

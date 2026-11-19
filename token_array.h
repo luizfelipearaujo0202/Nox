@@ -2,7 +2,7 @@
 // token_array.h
 
 #include "structures/structures.h"
-#include <stdlib.h>
+#include "mem_logger.h"
 
 typedef struct {
     __NoxToken__* data;
@@ -21,7 +21,7 @@ static inline __NoxValue_BOOLEAN_TYPE
       ? 16
       : arr->capacity * 2;
 
-    void* data = realloc(
+    void* data = _NOX_REALLOC(
       arr->data,
         cap * sizeof(__NoxToken__)
       );
@@ -39,7 +39,7 @@ static inline __NoxValue_BOOLEAN_TYPE
 }
 
 static inline void __NoxToken_array_free(__NoxToken_array* arr) {
-  free(arr->data);
+  _NOX_FREE(arr->data);
 
   arr->data = NULL;
   arr->count = 0;

@@ -3,7 +3,7 @@
 // parser/var/var.h
 
 #include "../../structures/structures.h"
-#include <stdlib.h>
+#include "../../mem_logger.h"
 
   typedef
 enum {
@@ -51,7 +51,7 @@ static inline __NoxVar_value*
     __NoxVar_v value
     ) {
     __NoxVar_value* v = (__NoxVar_value*) \
-      malloc(sizeof(__NoxVar_value));
+      _NOX_ALLOC(sizeof(__NoxVar_value));
     if (v == NULL)
       { return NULL; }
 
@@ -62,7 +62,7 @@ static inline __NoxVar_value*
     if (type == STRING_VALUE && value.v_string != NULL) {
         v->_v.v_string = strdup(value.v_string);
         if (v->_v.v_string == NULL) {
-            free(v);
+            _NOX_FREE(v);
             return NULL;
         }
     } else {
@@ -79,7 +79,7 @@ static inline void
       { return; }
 
     if (v->_t == STRING_VALUE) {
-      free(v->_v.v_string);
+      _NOX_FREE(v->_v.v_string);
       v->_v.v_string = NULL;
       return;
     }
@@ -98,7 +98,7 @@ static inline void
     { return; }
 
   __NoxVar_value_clear(v);
-  free(v);
+  _NOX_FREE(v);
 }
 
 
@@ -127,13 +127,13 @@ static inline __NoxValue_BOOLEAN_TYPE
 
   if (node->value != NULL) 
     {__NoxVar_value_release(node->value);}
-  free(node->name);
+  _NOX_FREE(node->name);
 
   if (node->next != NULL) {
     __NoxVar_free(node->next);
   }
 
-  free(node);
+  _NOX_FREE(node);
   return __NoxBool_TRUE_VALUE;
 }
 
@@ -145,8 +145,8 @@ static inline void
     { return; }
 
   __NoxVar_value_release(node->value);
-  free(node->name);
-  free(node);
+  _NOX_FREE(node->name);
+  _NOX_FREE(node);
 }
 
 
@@ -169,16 +169,16 @@ static inline __NoxVar__*
     { return NULL; }
 
   __NoxVar__* node =
-    (__NoxVar__*)malloc(
+    (__NoxVar__*)_NOX_ALLOC(
       sizeof(__NoxVar__)
     );
   if (node == NULL)
-    { free(node);
+    { _NOX_FREE(node);
       return NULL; }
 
-  node->name = (char*)malloc(strlen(name) + 1);
+  node->name = (char*)_NOX_ALLOC(strlen(name) + 1);
   if (node->name == NULL)
-    { free(node);
+    { _NOX_FREE(node);
       return NULL; }
   strcpy(node->name, name);
 

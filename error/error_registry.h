@@ -1,12 +1,15 @@
 #pragma once
 
 #include "../structures/structures.h"
+#include "error_structures.h"
+
 #include "../error.h"
 #include "error_aux.h"
+
 #include "../dynamic_array.h"
-#include "error_structures.h"
+#include "../mem_logger.h"
+
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 
 // error/error_registry.h
@@ -206,7 +209,7 @@ static inline __NoxValue_BOOLEAN_TYPE
     if (!__NoxError_regarray_clear(arr))
       { return __NoxBool_FALSE_VALUE; }
 
-    free(arr);
+    _NOX_FREE(arr);
     return __NoxBool_TRUE_VALUE;
   }
 
@@ -216,7 +219,7 @@ static inline __NoxError_regarray*
   {
     __NoxError_regarray* arr = 
       (__NoxError_regarray*) \
-      malloc(sizeof(__NoxError_regarray));
+      _NOX_ALLOC(sizeof(__NoxError_regarray));
 
     if (arr == NULL) 
       { return NULL; }
@@ -229,7 +232,7 @@ static inline __NoxError_regarray*
     );
 
     if (arr->data == NULL)
-      { free(arr);
+      { _NOX_FREE(arr);
         return NULL; }
 
     arr->next_id = 0;

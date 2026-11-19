@@ -2,9 +2,10 @@
 
 // error_aux.h
 
+#include "../globals.h"
 #include "../structures/structures.h"
 #include "error_structures.h"
-#include <stdlib.h>
+#include "../mem_logger.h"
 
 static inline __NoxError_source_line* 
   __NoxError_get_source_line
@@ -15,7 +16,7 @@ static inline __NoxError_source_line*
       { return NULL; }
 
     __NoxError_source_line* sl =
-      (__NoxError_source_line*)malloc
+      (__NoxError_source_line*)_NOX_ALLOC
         (sizeof(__NoxError_source_line));
 
     if (sl == NULL) { return NULL; }
@@ -45,7 +46,7 @@ static inline __NoxError_source_line*
       }
     }
     if (!found)
-      { free(sl); return NULL; }
+      { _NOX_FREE(sl); return NULL; }
     return sl;
   }
 
@@ -66,9 +67,9 @@ static inline __NoxError_source*
       if (sl == NULL) return NULL;
 
       __NoxError_source* s =
-        (__NoxError_source*)malloc(sizeof(__NoxError_source));
+        (__NoxError_source*)_NOX_ALLOC(sizeof(__NoxError_source));
       if (s == NULL) 
-        { free(sl);
+        { _NOX_FREE(sl);
           return NULL; }
 
       s->src = src;
@@ -79,8 +80,8 @@ static inline __NoxError_source*
 static inline __NoxValue_BOOLEAN_TYPE
   __NoxError_free_source(__NoxError_source* s)
     { if (s == NULL) return __NoxBool_FALSE_VALUE;
-      free(s->line);
-      free(s);
+      _NOX_FREE(s->line);
+      _NOX_FREE(s);
       return __NoxBool_TRUE_VALUE; }
 
 
@@ -161,7 +162,7 @@ static inline __NoxError_note*
 
   __NoxError_note* note = 
     (__NoxError_note*)
-    malloc(sizeof(__NoxError_note));
+    _NOX_ALLOC(sizeof(__NoxError_note));
 
   if (note == NULL) return NULL;
 

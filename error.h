@@ -6,7 +6,7 @@
 #include "structures/structures.h"
 #include "error/error_aux.h"
 #include "error/error_renderer.h"
-#include <stdlib.h>
+#include "mem_logger.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -29,8 +29,8 @@ static inline void
     __NoxError_note* n = *(__NoxError_note**)element;
     
     if (n != NULL) {
-        free(n->msg);
-        free(n);
+      _NOX_FREE(n->msg);
+      _NOX_FREE(n);
     }
   }
 
@@ -43,7 +43,7 @@ static inline __NoxValue_BOOLEAN_TYPE
     if (!__NoxError_is_valid(e, __NoxBool_FALSE_VALUE))
       { return __NoxBool_FALSE_VALUE; }
 
-    e->msg = (char*)malloc(strlen(msg) + 1);
+    e->msg = (char*)_NOX_ALLOC(strlen(msg) + 1);
     if (e->msg == NULL)
       { return __NoxBool_FALSE_VALUE; }
     strcpy(e->msg, msg);
@@ -73,14 +73,14 @@ static inline __NoxValue_BOOLEAN_TYPE
   __NoxError_free(__NoxError__* e)
   { if (!__NoxError_is_valid(e, __NoxBool_FALSE_VALUE))
       { return __NoxBool_FALSE_VALUE; }
-    free(e->msg);
+    _NOX_FREE(e->msg);
 
     if (e->notes != NULL) {
       if (e->notes->data != NULL)
         {__NoxDynaArr_free(e->notes->data);}
-      free(e->notes);
+      _NOX_FREE(e->notes);
     }
-    free(e);
+    _NOX_FREE(e);
     return __NoxBool_TRUE_VALUE; }
 
 static inline __NoxError__*
@@ -99,7 +99,7 @@ static inline __NoxError__*
       { return NULL; }
 
     __NoxError__* e =
-      (__NoxError__*)malloc(sizeof(__NoxError__));
+      (__NoxError__*)_NOX_ALLOC(sizeof(__NoxError__));
 
     if (e == NULL)
       { return NULL; }
@@ -111,8 +111,8 @@ static inline __NoxError__*
         !__NoxError_set_position(e, line,
                   c_start, c_end)
       )
-      { free(e->msg);
-        free(e);
+      { _NOX_FREE(e->msg);
+        _NOX_FREE(e);
         return NULL; }
 
     if (note == NULL){
@@ -121,7 +121,7 @@ static inline __NoxError__*
     }
 
     e->notes = (__NoxError_note_array*)
-      malloc(sizeof(__NoxError_note_array));
+      _NOX_ALLOC(sizeof(__NoxError_note_array));
 
     if (e->notes == NULL) {
       return e;

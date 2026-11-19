@@ -16,8 +16,9 @@
 
 #include "dynamic_array.h"
 
+#include "mem_logger.h"
+
 #include <errno.h>
-#include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 
@@ -370,7 +371,7 @@ __NoxExec_read_identifier(__NoxExec_context* c)
   }
 
   size_t key_len = t->length;
-  char* key = (char*)malloc(t->length + 1);
+  char* key = (char*)_NOX_ALLOC(t->length + 1);
   _NOX_DEBUG_LOG(DEBUG_INFO, "EXECUTOR", "read_identifier", "alocando 'key'");
   if (key == NULL)
     { _NOX_DEBUG_LOG(DEBUG_ERROR, "", "", " [ERRO]\n");
@@ -433,12 +434,12 @@ __NoxExec_read_identifier(__NoxExec_context* c)
         );
       }
     }
-    free(key);
+    _NOX_FREE(key);
     return NULL;
   }
   _NOX_DEBUG_LOG(DEBUG_VERIFY, "", "", "[DONE]\n");
 
-  free(key);
+  _NOX_FREE(key);
   return var;
 }
 
@@ -491,7 +492,7 @@ __NoxExec_read_value(__NoxExec_context* c)
   }
 
   size_t key_len = t->length;
-  char* key = (char*)malloc(t->length + 1);
+  char* key = (char*)_NOX_ALLOC(t->length + 1);
   _NOX_DEBUG_LOG(DEBUG_INFO, "EXECUTOR", "read_value", "alocando 'key'");
   if (key == NULL)
     { _NOX_DEBUG_LOG(DEBUG_ERROR, "", "", " [ERRO]\n");
@@ -553,12 +554,12 @@ __NoxExec_read_value(__NoxExec_context* c)
         );
       }
     }
-    free(key);
+    _NOX_FREE(key);
     return NULL;
   }
   _NOX_DEBUG_LOG(DEBUG_VERIFY, "", "", "[DONE]\n");
 
-  free(key);
+  _NOX_FREE(key);
   return var;
 }
 
@@ -616,7 +617,7 @@ __NoxExec_write_identifier(__NoxExec_context* c)
   ) { return __NoxBool_FALSE_VALUE; }
 
   size_t key_len = node->data.assignment.identifier->data.token->length;
-  char* key = (char*)malloc(key_len + 1);
+  char* key = (char*)_NOX_ALLOC(key_len + 1);
   if (key == NULL)
     { return __NoxBool_FALSE_VALUE; }
   memcpy(key, node->data.assignment.identifier->data.token->start, key_len);
@@ -633,7 +634,7 @@ __NoxExec_write_identifier(__NoxExec_context* c)
     c->node = node;
 
     if (res.status != CALC_OK) {
-      free(key);
+      _NOX_FREE(key);
       return __NoxBool_FALSE_VALUE;
     }
 
@@ -645,13 +646,13 @@ __NoxExec_write_identifier(__NoxExec_context* c)
     );
   }
   else if (node->data.assignment.value->data.token == NULL)
-    { free(key);
+    { _NOX_FREE(key);
       return __NoxBool_FALSE_VALUE; }
   else {
     size_t value_len = node->data.assignment.value->data.token->length;
-    value_str = (char*)malloc(value_len + 1);
+    value_str = (char*)_NOX_ALLOC(value_len + 1);
     if (value_str == NULL)
-      { free(key);
+      { _NOX_FREE(key);
         return __NoxBool_FALSE_VALUE; }
     memcpy(value_str, node->data.assignment.value->data.token->start, value_len);
     value_str[value_len] = '\0';
@@ -711,8 +712,8 @@ __NoxExec_write_identifier(__NoxExec_context* c)
         }
       }
 
-      free(key);
-      free(value_str);
+      _NOX_FREE(key);
+      _NOX_FREE(value_str);
       return __NoxBool_FALSE_VALUE;
     }
   }
@@ -844,7 +845,7 @@ __NoxExec_write_identifier(__NoxExec_context* c)
     __NoxError_note* note = NULL;
 
     if (existing != NULL && existing->token != NULL) {
-      __NoxError_create_note(
+      note = __NoxError_create_note(
         "declared before here",
         existing->token->line,
         existing->token->column,
@@ -901,10 +902,12 @@ __NoxExec_write_identifier(__NoxExec_context* c)
     // Limpa o value novo que não vai ser usado
     if (!is_shared) {
         __NoxVar_value_clear(value);
-        free(value);
+        _NOX_FREE(value);
     }
-    free(key);
-    free(value_str);
+
+    __NoxError_note_destructor(note);
+    _NOX_FREE(key);
+    _NOX_FREE(value_str);
     return __NoxBool_FALSE_VALUE;
   }
   __NoxVar__* new_var = __NoxVar_create(
@@ -917,8 +920,8 @@ __NoxExec_write_identifier(__NoxExec_context* c)
   );
 
   if (new_var == NULL) {
-      if (!is_shared) { __NoxVar_value_clear(value); free(value); }
-      free(key); free(value_str);
+      if (!is_shared) { __NoxVar_value_clear(value); _NOX_FREE(value); }
+      _NOX_FREE(key); _NOX_FREE(value_str);
       return __NoxBool_FALSE_VALUE;
   }
 
@@ -930,11 +933,11 @@ __NoxExec_write_identifier(__NoxExec_context* c)
   
   if (!is_shared) {
       __NoxVar_value_clear(value);
-      free(value);
+      _NOX_FREE(value);
   }
 
-  free(value_str);
-  free(key);
+  _NOX_FREE(value_str);
+  _NOX_FREE(key);
 
   return __NoxBool_TRUE_VALUE;
 }

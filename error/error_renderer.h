@@ -7,6 +7,7 @@
 #include "error_aux.h"
 #include "../structures/structures.h"
 #include "error_structures.h"
+#include "../mem_logger.h"
 
 static inline __NoxValue_BOOLEAN_TYPE
   __NoxError_render_line(__NoxError__* e, __NoxError_source* s)
@@ -42,7 +43,7 @@ static inline __NoxValue_BOOLEAN_TYPE
         !__NoxError_is_pos_valid(e, s->line->length))
       { return __NoxBool_FALSE_VALUE; }
 
-    char* line_src = (char*)malloc(s->line->length + 1);
+    char* line_src = (char*)_NOX_ALLOC(s->line->length + 1);
     if (line_src == NULL)
       { return __NoxBool_FALSE_VALUE; }
 
@@ -50,7 +51,7 @@ static inline __NoxValue_BOOLEAN_TYPE
     char prefix[32];
     int prefix_len = snprintf(prefix, sizeof(prefix), "%d | ", e->line);
     if (prefix_len < 0)
-      { free(line_src);
+      { _NOX_FREE(line_src);
         return __NoxBool_FALSE_VALUE; }
 
     size_t j = 0;
@@ -64,7 +65,7 @@ static inline __NoxValue_BOOLEAN_TYPE
 
     printf("%s: %s\n", __NoxError_get_type(e), e->msg);
     printf("%s%s\n", prefix, line_src);
-    free(line_src);
+    _NOX_FREE(line_src);
 
     int i = 0;
     while (i < prefix_len + e->column_start - 1)
@@ -136,15 +137,15 @@ static inline __NoxValue_BOOLEAN_TYPE
             "", "",
             ": OK\n"
           );
-          char* note_src = (char*)malloc(note_sl->length + 1);
+          char* note_src = (char*)_NOX_ALLOC(note_sl->length + 1);
           if (note_src != NULL) {
             memcpy(note_src, s->src + note_sl->start, note_sl->length);
             note_src[note_sl->length] = '\0';
 
             printf(" %d | %s\n", note->line, note_src);
-              free(note_src); 
+              _NOX_FREE(note_src); 
           }
-          free(note_sl);
+          _NOX_FREE(note_sl);
         }
         else {
           _NOX_DEBUG_LOG(

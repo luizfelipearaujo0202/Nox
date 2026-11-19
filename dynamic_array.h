@@ -1,11 +1,14 @@
 #pragma once
 
+#ifndef _NOX_DYNAMIC_ARRAY_ENABLED
+#  define _NOX_DYNAMIC_ARRAY_ENABLED 1
+#endif
+
+#include "globals.h"
 #include "structures/structures.h"
-#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include <stddef.h>
-
 
 static inline __NoxValue_BOOLEAN_TYPE
   __NoxDynaArr_is_valid
@@ -50,7 +53,7 @@ static inline __NoxValue_BOOLEAN_TYPE
         else size =
             cap * arr->element_size;
 
-        void* data = realloc(
+        void* data = _NOX_DYNA_REALLOC(
             arr->data,
             size
         );
@@ -80,7 +83,7 @@ static inline __NoxValue_BOOLEAN_TYPE
           (char*)arr->data + i * arr->element_size
         );
       }
-      free(arr->data);
+      _NOX_DYNA_FREE(arr->data);
 
       arr->count = 0;
       arr->capacity = 0;
@@ -97,7 +100,7 @@ static inline __NoxValue_BOOLEAN_TYPE
       if (!__NoxDynaArr_clear(arr))
         { return __NoxBool_FALSE_VALUE; }
 
-      free(arr);
+      _NOX_DYNA_FREE(arr);
       return __NoxBool_TRUE_VALUE; }
 
 
@@ -113,7 +116,9 @@ static inline __NoxDynaArr__*
 
     __NoxDynaArr__* arr = 
       (__NoxDynaArr__*) \
-      malloc(sizeof(__NoxDynaArr__));
+      _NOX_DYNA_ALLOC(
+        sizeof(__NoxDynaArr__)
+      );
 
     if (arr == NULL) 
       { return NULL; }

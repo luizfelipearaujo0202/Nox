@@ -1,5 +1,5 @@
+#include "mem_logger.h"
 #include <stdio.h>
-#include <stdlib.h>
 
 // file_ctrl.h
 
@@ -59,20 +59,20 @@ static inline long __NoxFile_get_size(FILE* file) {
 static inline char* read_file(const char* file) {
     FILE* f = __NoxFile_open(file, "r");
     if (f == NULL) {
-        printf("read_file(): falha na abertura do arquivo");
+        printf("read_file(): falha na abertura do arquivo\n");
         return NULL;
     }
 
     long size = __NoxFile_get_size(f);
     if (size < 0) {
-        printf("read_file(): tamanho do arquivo menor que 0");
+        printf("read_file(): tamanho do arquivo menor que 0\n");
         __NoxFile_close(f);
         return NULL;
     }
 
-    void* addr = malloc(size + 1);
+    void* addr = _NOX_ALLOC(size + 1);
     if (addr == NULL) {
-        printf("read_file(): falha na alocação");
+        printf("read_file(): falha na alocação\n");
         __NoxFile_close(f);
         return NULL;
     }
@@ -80,7 +80,7 @@ static inline char* read_file(const char* file) {
     long lidos = fread(addr, sizeof(char), size, f);
     if (lidos < size || ferror(f)) {
         printf("read_file(): erro de leitura\n");
-        free(addr);
+        _NOX_FREE(addr);
         __NoxFile_close(f);
         return NULL;
     }
@@ -95,9 +95,9 @@ static inline char* read_file(const char* file) {
 
 static inline void __NoxFile_free(char* txt) {
     if (txt == NULL) {
-        printf("free_file(): parâmetro nulo");
+        printf("free_file(): parâmetro nulo\n");
         return;
     }
 
-    free(txt);
+    _NOX_FREE(txt);
 }

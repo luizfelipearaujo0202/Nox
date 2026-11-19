@@ -29,7 +29,10 @@ AST_NOT_EQUAL,    // !=
 AST_LESS,         // <
 AST_GREATER,      // >
 AST_LESS_EQUAL,   // <=
-AST_GREATER_EQUAL // >=
+AST_GREATER_EQUAL,// >=
+
+AST_AND,
+AST_OR
 } __NoxAST_OPERATOR;
 
 

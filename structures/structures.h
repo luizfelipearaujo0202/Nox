@@ -10,39 +10,6 @@ __NoxBool_FALSE_VALUE,
 __NoxBool_TRUE_VALUE
 } __NoxValue_BOOLEAN_TYPE;
 
-// ==== DEBUG ====
-typedef enum {
-  DEBUG_NONE = 0,
-  DEBUG_VERIFY = 1 << 0, // 0001
-  DEBUG_INFO = 1 << 1, // 0010
-  DEBUG_ERROR = 1 << 2, // 0100
-  DEBUG_ALL = 0xFFFF // 1111
-} __NoxDebug_LEVEL;
-
-extern unsigned int _NOX_DEBUG_ENABLED;
-
-#define _NOX_DEBUG_LOG(level, module, function, ...) \
-  do { \
-    if ((_NOX_DEBUG_ENABLED & (level)) != 0) { \
-      const char* _lvl_str = \
-        ((level) & DEBUG_VERIFY) ? "verify" : \
-        ((level) & DEBUG_INFO) ? "info" : \
-        ((level) & DEBUG_ERROR) ? "error" : "unknown"; \
-      \
-      if ((function) != NULL && (function)[0] != '\0') { \
-        printf("[%s - %s (%s)] ", (module), (function), _lvl_str); \
-      } \
-      else if ((module) != NULL && (module)[0] != '\0') { \
-        printf("[%s (%s)] ", (module), _lvl_str); \
-      } \
-      printf(__VA_ARGS__); \
-    } \
-  } while (0)
-
-#define _NOX_DEBUG_TREE(branch, ...) \
-  printf("[DEBUG - %s] " branch "\n", __func__, ##__VAR_ARGS__);
-// ===============
-
 // ==== DYNAMIC ARRAY ====
 
 // Destructor, destroy a single element
@@ -59,7 +26,7 @@ typedef __NoxValue_BOOLEAN_TYPE
 
 
   typedef
-struct {
+struct __NoxDynaArr__ {
   void* data;
   size_t count;
   size_t capacity;
@@ -71,7 +38,26 @@ struct {
 
 // =======================
 
-// ==== LEXER USE ====
+// ==== MEMORY LOGGER ====
+
+  typedef
+struct {
+  __NoxDynaArr__* data;
+  int initialized;
+} __NoxMem_context;
+
+  typedef 
+struct {
+  int freed;
+  void* ptr;
+  int size;
+  const char* caller;
+  const char* func;
+} __NoxMem_record;
+
+// =======================
+
+// ==== LEXER ====
 
 typedef enum
 {
@@ -143,4 +129,4 @@ typedef struct {
   size_t length;
 } __NoxToken__;
 
-// ===================
+// ===============

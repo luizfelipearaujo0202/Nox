@@ -4,6 +4,8 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "mem_logger.h"
+
 #include "error/error_registry.h"
 #include "parser/var/var_table.h"
 
@@ -16,7 +18,7 @@
 
 #include "file_ctrl.h"
 
-#include "parser/parser.h"
+#include "parser/parser_refact.h"
 #include "lexer.h"
 #include "executor.h"
 
@@ -25,12 +27,22 @@
 
 unsigned int _NOX_DEBUG_ENABLED = 0;
 
+#include "globals.h"
+
 int main(int argc, char* argv[]) {
   if (argc < 2) {
     printf("Uso: %s <arquivo.nox>\n", argv[0]);
     return 1;
   }
 
+  /*
+  Iniciando o contexto do registro de memória
+  A função atribui valores à um contexto onde cada
+  malloc, free e realloc é guardado se possível
+  */
+  _NOX_MEM_INIT();
+
+  char* filename = NULL;
   if (argc <= 3) {
     for (int i = 1; i < argc; i++) {
       if (strncmp(argv[i], "-debug=", 7) == 0)
@@ -46,6 +58,8 @@ int main(int argc, char* argv[]) {
             { _NOX_DEBUG_ENABLED = DEBUG_VERIFY; }
           else if (strcmp(token, "info") == 0)
             { _NOX_DEBUG_ENABLED = DEBUG_INFO; }
+          else if (strcmp(token, "memory") == 0)
+            { _NOX_DEBUG_ENABLED = DEBUG_MEMORY; }
           else if (strcmp(token, "error") == 0)
             { _NOX_DEBUG_ENABLED = DEBUG_ERROR; }
 
@@ -56,25 +70,37 @@ int main(int argc, char* argv[]) {
             printf("  2. none: silent debug\n");
             printf("  3. verify: show only 'verify' messages\n");
             printf("  4. info: show only 'info' messages\n");
-            printf("  5. error: show only 'error' messages\n");
+            printf("  5. memory: show only 'mem' messages\n");
+            printf("  6. error: show only 'error' messages\n");
             printf("Can be combined like '-debug=info,verify''\n");
             return 1;
           }
           else {
             printf("'-debug=': invalid flag; type -debug=help to get available commands\n");
+            
             return 1;
           }
 
           token = strtok_r(NULL, ",", &saveptr);
         }
       }
+      else {
+        filename = argv[i];
+      }
     }
   }
 
-  char* src = read_file(argv[1]);
+  if (filename == NULL) {
+    fprintf(stderr, "Arquivo não especificado\n");
+    
+    return 1;
+  }
+
+  char* src = read_file(filename);
 
   if (src == NULL) {
     fprintf(stderr, "Erro ao ler o arquivo.\n");
+    
     return 1;
   }
 
@@ -82,7 +108,8 @@ int main(int argc, char* argv[]) {
 
   if (context.registry == NULL)
     { printf("Registry array alloc failed\n"); 
-      free(src);
+      _NOX_FREE(src);
+      
       return 1; }
 
   __NoxLexer_pos lexer = {
@@ -99,6 +126,7 @@ int main(int argc, char* argv[]) {
 
     if (!__NoxToken_array_push(&arr, t)) {
       fprintf(stderr, "Erro ao alocar tokens.\n");
+      
       return 1;
     }
 
@@ -116,7 +144,8 @@ int main(int argc, char* argv[]) {
     if (source == NULL)
       { __NoxError_regarray_free(context.registry);
         __NoxToken_array_free(&arr);
-        free(src);
+        _NOX_FREE(src);
+        
         return 1; }
 
     __NoxError_render_line(err->error, source);
@@ -124,7 +153,8 @@ int main(int argc, char* argv[]) {
     __NoxError_regarray_free(context.registry);
     __NoxToken_array_free(&arr);
     
-    free(src);
+    _NOX_FREE(src);
+    
     return 1;
   }
 
@@ -177,20 +207,23 @@ int main(int argc, char* argv[]) {
         if (source == NULL)
           { __NoxError_regarray_free(context.registry);
             __NoxToken_array_free(&arr);
-            free(src);
+            _NOX_FREE(src);
+            
             return 1; }
 
         __NoxError_render_line(err->error, source);
         __NoxError_free_source(source);
         __NoxError_regarray_free(context.registry);
         __NoxToken_array_free(&arr);
-        free(src);
+        _NOX_FREE(src);
+        
         return 1;
       }
 
       __NoxToken_array_free(&arr);
       __NoxError_regarray_free(context.registry);
-      free(src);
+      _NOX_FREE(src);
+      
       return 1; }
 
   _NOX_DEBUG_LOG(
@@ -214,6 +247,7 @@ int main(int argc, char* argv[]) {
     __NoxError_regarray_free(context.registry);
     __NoxParser_program_free(pb);
     __NoxFile_free(src);
+    
     return 1;
   }
 
@@ -349,7 +383,7 @@ int main(int argc, char* argv[]) {
         );
 
         __NoxError_free(e->error);
-        free(e);
+        _NOX_FREE(e);
         break;
       }
       else {
@@ -366,6 +400,7 @@ int main(int argc, char* argv[]) {
     __NoxError_regarray_free(context.registry);
     __NoxParser_program_free(pb);
     __NoxFile_free(src);
+    
     return 1;
   }
   _NOX_DEBUG_LOG(
@@ -381,5 +416,10 @@ int main(int argc, char* argv[]) {
   __NoxFile_free(src);
 
   __NoxError_regarray_free(context.registry);
+
+  // Verifies the heap manually
+  __NoxMem_verify();
+  // Destroys the memory context
+  _NOX_MEM_DESTROY();
   return 0;
 }

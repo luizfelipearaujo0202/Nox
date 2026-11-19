@@ -7,10 +7,10 @@
 #include "../error/error_registry.h"
 #include "../error.h"
 #include "../debug.h"
+#include "../mem_logger.h"
 #include "var/var.h"
 
 #include <stddef.h>
-#include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -113,19 +113,38 @@ static inline  __NoxValue_BOOLEAN_TYPE
       ? __NoxBool_TRUE_VALUE 
       : __NoxBool_FALSE_VALUE ; }
 
-static inline void 
+static inline void
   __NoxParser_ast_free(__NoxAST_NODE* n)
-{  
-    if (n == NULL) return;
-    if (n->_type == AST_BINARY) {
+{
+  if (n == NULL) return;
+
+  switch (n->_type) {
+    case AST_BINARY:
       __NoxParser_ast_free(n->data.binary.left);
       __NoxParser_ast_free(n->data.binary.right);
-    }
-    else if (n->_type == AST_ASSIGNMENT) {
+      break;
+
+    case AST_ASSIGNMENT:
       __NoxParser_ast_free(n->data.assignment.identifier);
       __NoxParser_ast_free(n->data.assignment.value);
-    }
-    free(n);
+      break;
+
+    case AST_IF:
+      __NoxParser_ast_free(n->data.if_statement.condition);
+      if (n->data.if_statement.then_branch)
+        __NoxDynaArr_free(n->data.if_statement.then_branch);
+      if (n->data.if_statement.else_branch)
+        __NoxDynaArr_free(n->data.if_statement.else_branch);
+      break;
+
+    case AST_LITERAL:
+    case AST_IDENTIFIER:
+    case AST_UNARY:
+    default:
+      break;
+  }
+
+  _NOX_FREE(n);
 }
 
 
@@ -134,7 +153,7 @@ static inline void
 {
   if (p == NULL) return;
   __NoxDynaArr_free(p->statements);
-  free(p);
+  _NOX_FREE(p);
 }
 
 // -----
@@ -517,7 +536,7 @@ static inline __NoxAST_NODE*
       { return NULL; }
 
     __NoxAST_NODE* node = (__NoxAST_NODE*)\
-        malloc(sizeof(__NoxAST_NODE));
+        _NOX_ALLOC(sizeof(__NoxAST_NODE));
 
     if (node == NULL) 
       { _NOX_DEBUG_LOG(
@@ -547,7 +566,7 @@ static inline __NoxAST_NODE*
     else if (current->_type == LPAREN) {
       // '('
       current = __NoxParser_advance(p, 0);
-      free(node);
+      _NOX_FREE(node);
       node = __NoxParser_parse_expression(p);
       _NOX_DEBUG_LOG(
         DEBUG_INFO,
@@ -562,7 +581,7 @@ static inline __NoxAST_NODE*
             DEBUG_ERROR,
             "PARSER",
             "parse_primary",
-            "node = NULL"
+            "node = NULL\n"
           );
           return NULL; }
 
@@ -572,7 +591,7 @@ static inline __NoxAST_NODE*
             DEBUG_ERROR,
             "PARSER",
             "parse_primary",
-            "current = NULL"
+            "current = NULL\n"
           );
         __NoxParser_ast_free(node);
         return NULL; }
@@ -587,7 +606,7 @@ static inline __NoxAST_NODE*
           DEBUG_INFO,
           "PARSER",
           "parse_primary",
-          "current entrou no if de parênteses"
+          "current entrou no if de parênteses\n"
         );
         __NoxParser_ast_free(node);
         return NULL;
@@ -634,7 +653,7 @@ static inline __NoxAST_NODE*
       );
 
       __NoxError_free(e);
-      free(node); return NULL; 
+      _NOX_FREE(node); return NULL; 
     }
     else return NULL;
   }
@@ -809,7 +828,7 @@ static inline __NoxAST_NODE*
           return NULL; }
 
       __NoxAST_NODE* node = 
-        (__NoxAST_NODE*)malloc(sizeof(__NoxAST_NODE));
+        (__NoxAST_NODE*)_NOX_ALLOC(sizeof(__NoxAST_NODE));
       if (node == NULL) 
         { __NoxParser_ast_free(left);
           __NoxParser_ast_free(right);
@@ -925,7 +944,7 @@ static inline __NoxAST_NODE*
           return NULL; }
 
       __NoxAST_NODE* node = 
-        (__NoxAST_NODE*)malloc(sizeof(__NoxAST_NODE));
+        (__NoxAST_NODE*)_NOX_ALLOC(sizeof(__NoxAST_NODE));
       if (node == NULL) 
         { __NoxParser_ast_free(left);
           __NoxParser_ast_free(right);
@@ -941,142 +960,6 @@ static inline __NoxAST_NODE*
     }
     return left;
   }
-
-
-/*
-- Função: __NoxParser_parse_comparison
-
-- Parâmetros:
-  @p        - Informações do parser
-
-- Objetivo:
-Analisar uma condição e retornar um
-nó relativo a ela
-
-- Funcionamento:
-1. Valida @p
-  Se inválido: retorna NULL
-
-2. Obtém $left com __NoxParser_parse_expression
-  Se NULL: retorna NULL
-
-3. Coleta $current com __NoxParser_peek
-  Se NULL: retorna $left
-
-4. Inicia loop principal
-  - Identifica operador lógico
-  - Consome-o
-  - Obtém $right com __NoxParser_parse_expression
-    Se NULL: retorna NULL
-  - Aloca nó AST $node
-    Se NULL: retorna NULL
-  - Configura $node
-  - Atribui $node a $left
-  - Atribui o token atual a $current
-
-5. Retorna $left
-
-- Consumo de tokens:
-  - EQUAL
-  - NOT_EQUAL
-  - GREATER
-  - LESS
-  - GREATER_EQUAL
-  - LESS_EQUAL
-  - Tokens de __NoxParser_parse_expression
-
-- Retorno:
-  * Ponteiro para o nó AST (__NoxAST_NODE*)
-  ! NULL
-
-- Notas:
-  * Implementa associatividade à esquerda.
-  * Possui precendência menor que operadores aritméticos
-*/
-static inline __NoxAST_NODE*                                                                                           
-  __NoxParser_parse_comparison(parser_info* p)                                                                           
-  {                      
-    if (!__NoxParser_is_parserinfo_valid(p))
-      { return NULL; }
-
-    __NoxAST_NODE* left = __NoxParser_parse_expression(p);                                                             
-    if (left == NULL) return NULL;
-
-    __NoxToken__* current = __NoxParser_peek(p, 0);                                                                    
-    if (current == NULL) return left;                                                                                  
-
-    while (                                                                                                            
-      current->_type == EQUAL ||                                                                                     
-      current->_type == NOT_EQUAL ||
-      current->_type == LESS ||
-      current->_type == GREATER ||
-      current->_type == LESS_EQUAL ||
-      current->_type == GREATER_EQUAL
-    ) {
-      __NoxAST_OPERATOR op;
-      switch (current->_type) {                                                                                      
-        case EQUAL:         op = AST_EQUAL; break;
-        case NOT_EQUAL:     op = AST_NOT_EQUAL; break;
-        case LESS:          op = AST_LESS; break;                                                                  
-        case GREATER:       op = AST_GREATER; break;                                                               
-        case LESS_EQUAL:    op = AST_LESS_EQUAL; break;                                                            
-        case GREATER_EQUAL: op = AST_GREATER_EQUAL; break;                                                         
-          default: break;                                                                                            
-      }                                                                                                              
-
-      __NoxParser_advance(p, 0);
-
-      __NoxAST_NODE* right = __NoxParser_parse_expression(p);
-      if (right == NULL) 
-        { return NULL; }
-
-      __NoxAST_NODE* node = (__NoxAST_NODE*)
-        malloc(sizeof(__NoxAST_NODE));
-      if (node == NULL) 
-        { return NULL; }
-      node->_type = AST_BINARY;
-      node->data.binary.left = left;
-      node->data.binary.op = op;
-      node->data.binary.right = right;
-
-      left = node;
-      current = __NoxParser_peek(p, 0);
-    }
-
-    return left;
-  }
-
-
-
-/*
-- Função: __NoxParser_parse_condition
-
-- Parâmetros:
-  @p        - Informações do parser
-
-- Objetivo:
-Analisar e construir nós AST para uma
-condição
-
-- Funcionamento:
-
-- Consumo de tokens:
-  - Tokens de __NoxParser_parse_comparison
-
-- Retorno:
-  * Ponteiro para o nó AST (__NoxAST_NODE*)
-  ! NULL
-
-- Notas:
-  * Implementa associatividade à esquerda.
-*/
-
-static inline __NoxAST_NODE*
-  __NoxParser_parse_condition(
-    parser_info* p
-  ) {
-
-}
 
 /*
 - Função: __NoxParser_parse_statement
@@ -1133,18 +1016,21 @@ static inline __NoxAST_NODE*
 { if (!__NoxParser_is_parserinfo_valid(p))
     { return NULL; }
 
-  if (!__NoxParser_match(p, IDENTIFIER, 0) &&
-    !__NoxParser_expect(
-    p,
-    ASSIGN,
-    "unexpected assignment"
-  )) {
-    _NOX_DEBUG_LOG(
-      DEBUG_VERIFY,
-      "PARSER",
-      "parse_statement",
-      "erro de '=' inesperado"
-    );
+  if (!__NoxParser_match(p, IDENTIFIER, 0)) {
+    if (__NoxParser_match(p, ASSIGN, 0)) {
+      _NOX_DEBUG_LOG(
+        DEBUG_VERIFY,
+        "PARSER",
+        "parse_statement",
+        "erro de '=' inesperado"
+      );
+
+      __NoxParser_expect(
+        p,
+        IDENTIFIER,
+        "unexpected '='; expected identifier"
+      );
+    }
     return NULL;
   }
 
@@ -1179,73 +1065,68 @@ static inline __NoxAST_NODE*
     const __NoxToken__* t =
       __NoxParser_advance(p, 1);
 
-    if (__NoxParser_expect(
+    if (!__NoxParser_expect(
       p, 
       IDENTIFIER, 
       "invalid type '%.*s'",
       t->length, t->start))
-    {
-      char* key = (char*)malloc(t->length + 1);
-      if (key == NULL)
-        { __NoxParser_ast_free(identifier); return NULL; }
+    { __NoxParser_ast_free(identifier); 
+      return NULL; }
+    char* key = (char*)_NOX_ALLOC(t->length + 1);
+    if (key == NULL)
+      { __NoxParser_ast_free(identifier); return NULL; }
 
-      memcpy(key, t->start, t->length);;
-      key[t->length] = '\0';
-      if (
-        t->length == 3 &&
-        strcmp(key, "int") == 0
-      ) {
-        decl_type = INT_VALUE;
-      }
-      else if (
-        t->length == 5 &&
-        strcmp(key, "float") == 0
-      ) {
-        decl_type = FLOAT_VALUE;
-      }
-      else if (
-        t->length == 6 &&
-        strcmp(key, "string") == 0
-      ) {
-        decl_type = STRING_VALUE;
-      }
-      else if (
-        t->length == 4 &&
-        strcmp(key, "null") == 0
-      ) {
-        decl_type = NULL_VALUE;
-      }
-      else if (
-        t->length == 4 && 
-        strcmp(key, "bool") == 0
-      ) {
-        decl_type = BOOL_VALUE;
-      }
-      else {
-        __NoxError__* e =
-          __NoxParser_create_error(
-            p,
-            ERROR_TYPE,
-            t->line,
-            t->column,
-            t->column + t->length,
-            "unknown type '%s'",
-            key
-          );
-
-        __NoxError_free(e);
-        __NoxParser_ast_free(identifier);
-        free(key);
-        return NULL;
-      }
-
-      free(key);
-      __NoxParser_advance(p, 1);
+    memcpy(key, t->start, t->length);;
+    key[t->length] = '\0';
+    if (
+      t->length == 3 &&
+      strcmp(key, "int") == 0
+    ) {
+      decl_type = INT_VALUE;
+    }
+    else if (
+      t->length == 5 &&
+      strcmp(key, "float") == 0
+    ) {
+      decl_type = FLOAT_VALUE;
+    }
+    else if (
+      t->length == 6 &&
+      strcmp(key, "string") == 0
+    ) {
+      decl_type = STRING_VALUE;
+    }
+    else if (
+      t->length == 4 &&
+      strcmp(key, "null") == 0
+    ) {
+      decl_type = NULL_VALUE;
+    }
+    else if (
+      t->length == 4 && 
+      strcmp(key, "bool") == 0
+    ) {
+      decl_type = BOOL_VALUE;
     }
     else {
-      __NoxParser_ast_free(identifier); 
+      __NoxError__* e =
+        __NoxParser_create_error(
+          p,
+          ERROR_TYPE,
+          t->line,
+          t->column,
+          t->column + t->length,
+          "unknown type '%s'",
+          key
+        );
+
+      __NoxError_free(e);
+      __NoxParser_ast_free(identifier);
+      _NOX_FREE(key);
       return NULL;
     }
+
+    _NOX_FREE(key);
 
     if (!__NoxParser_expect(
       p,
@@ -1355,7 +1236,7 @@ static inline __NoxAST_NODE*
   }
 
   __NoxAST_NODE* node = (__NoxAST_NODE*) \
-    malloc(sizeof(__NoxAST_NODE));
+    _NOX_ALLOC(sizeof(__NoxAST_NODE));
   if (node == NULL) {
     __NoxParser_ast_free(identifier);
     __NoxParser_ast_free(value);
@@ -1370,6 +1251,721 @@ static inline __NoxAST_NODE*
   node->data.assignment.type = decl_type;
   return node;
 }
+
+
+/*
+=========================
+===    CONDITIONAL    ===
+=========================
+- Contém funções que envolvem tokens condicionais:
+  IF,
+  ELSE,
+  EQUAL,
+  NOT_EQUAL,
+  GREATER,
+  LESS,
+  GREATER_EQUAL,
+  LESS_EQUAL
+*/
+/*
+- Função: __NoxParser_parse_comparison
+
+- Parâmetros:
+  @p        - Informações do parser
+
+- Objetivo:
+Analisar uma condição e retornar um
+nó relativo a ela
+
+- Funcionamento:
+1. Valida @p
+  Se inválido: retorna NULL
+
+2. Obtém $left com __NoxParser_parse_expression
+  Se NULL: retorna NULL
+
+3. Coleta $current com __NoxParser_peek
+  Se NULL: retorna $left
+
+4. Inicia loop principal
+  - Identifica operador lógico
+  - Consome-o
+  - Obtém $right com __NoxParser_parse_expression
+    Se NULL: retorna NULL
+  - Aloca nó AST $node
+    Se NULL: retorna NULL
+  - Configura $node
+  - Atribui $node a $left
+  - Atribui o token atual a $current
+
+5. Retorna $left
+
+- Consumo de tokens:
+  - EQUAL
+  - NOT_EQUAL
+  - GREATER
+  - LESS
+  - GREATER_EQUAL
+  - LESS_EQUAL
+  - Tokens de __NoxParser_parse_expression
+
+- Retorno:
+  * Ponteiro para o nó AST (__NoxAST_NODE*)
+  ! NULL
+
+- Notas:
+  * Implementa associatividade à esquerda.
+  * Possui precendência menor que operadores aritméticos
+*/
+static inline __NoxAST_NODE*                                                                                           
+  __NoxParser_parse_comparison(parser_info* p)                                                                           
+  {                      
+    if (!__NoxParser_is_parserinfo_valid(p))
+      { return NULL; }
+
+    __NoxAST_NODE* left = __NoxParser_parse_expression(p);                                                             
+    if (left == NULL) return NULL;
+
+    __NoxToken__* current = __NoxParser_peek(p, 0);                                                                    
+    if (current == NULL) return left;                                                                                  
+
+    while (                                                                                                            
+      current->_type == EQUAL ||                                                                                     
+      current->_type == NOT_EQUAL ||
+      current->_type == LESS ||
+      current->_type == GREATER ||
+      current->_type == LESS_EQUAL ||
+      current->_type == GREATER_EQUAL
+    ) {
+      __NoxAST_OPERATOR op;
+      switch (current->_type) {                                                                                      
+        case EQUAL:         op = AST_EQUAL; break;
+        case NOT_EQUAL:     op = AST_NOT_EQUAL; break;
+        case LESS:          op = AST_LESS; break;                                                                  
+        case GREATER:       op = AST_GREATER; break;                                                               
+        case LESS_EQUAL:    op = AST_LESS_EQUAL; break;                                                            
+        case GREATER_EQUAL: op = AST_GREATER_EQUAL; break;                                                         
+          default: break;                                                                                            
+      }                                                                                                              
+
+      __NoxParser_advance(p, 0);
+
+      __NoxAST_NODE* right = __NoxParser_parse_expression(p);
+      if (right == NULL) {
+        __NoxParser_ast_free(left);
+        __NoxParser_ast_free(right);
+        return NULL;
+      }
+
+      __NoxAST_NODE* node = (__NoxAST_NODE*)
+        _NOX_ALLOC(sizeof(__NoxAST_NODE));
+      if (node == NULL) {
+        __NoxParser_ast_free(left);
+        __NoxParser_ast_free(right);
+        return NULL;
+      }
+      node->_type = AST_BINARY;
+      node->data.binary.left = left;
+      node->data.binary.op = op;
+      node->data.binary.right = right;
+
+      left = node;
+      current = __NoxParser_peek(p, 0);
+    }
+
+    return left;
+  }
+
+
+static inline __NoxAST_NODE*
+  __NoxParser_parse_logical_and
+    (parser_info* p)
+{
+  if (!__NoxParser_is_parserinfo_valid(p))
+    { return NULL;}
+
+  __NoxAST_NODE* left = 
+    __NoxParser_parse_comparison(p);
+  if (left == NULL)
+    { return NULL; }
+
+  __NoxAST_NODE* node = NULL;
+  while (__NoxParser_peek(p, 0)->_type == AND) {
+    __NoxParser_advance(p, 0); // consome 'and'
+
+    __NoxAST_NODE* right = __NoxParser_parse_comparison(p);
+    if (right == NULL)
+      { __NoxParser_ast_free(left);
+        return NULL; }
+
+    __NoxAST_OPERATOR op = AST_AND;
+
+    node = (__NoxAST_NODE*)
+      _NOX_ALLOC(sizeof(__NoxAST_NODE));
+    if (node == NULL) {
+      __NoxParser_ast_free(left);
+      __NoxParser_ast_free(right);
+      return NULL;
+    }
+
+    node->_type = AST_BINARY;
+    node->data.binary.left = left;
+    node->data.binary.op = op;
+    node->data.binary.right = right;
+
+    left = node;
+  }
+  return left;
+}
+
+static inline __NoxAST_NODE*
+  __NoxParser_parse_logical_or
+    (parser_info* p)
+{
+  if (!__NoxParser_is_parserinfo_valid(p))
+    { return NULL; }
+
+  __NoxAST_NODE* left = 
+    __NoxParser_parse_logical_and(p);
+  if (left == NULL)
+    { return NULL; }
+
+  while (__NoxParser_peek(p, 0)->_type == OR) {
+    __NoxAST_NODE* right = __NoxParser_parse_logical_and(p);
+    if (right == NULL)
+      { __NoxParser_ast_free(left);
+        return NULL; }
+
+    __NoxAST_OPERATOR op = AST_OR;
+
+    __NoxAST_NODE* node = (__NoxAST_NODE*)
+      _NOX_ALLOC(sizeof(__NoxAST_NODE));
+    if (node == NULL) {
+      __NoxParser_ast_free(left);
+      __NoxParser_ast_free(right);
+      return NULL;
+    }
+
+    node->_type = AST_BINARY;
+    node->data.binary.left = left;
+    node->data.binary.op = op;
+    node->data.binary.right = right;
+
+    left = node;
+  }
+  return left;
+}
+
+
+
+/*
+- Função: __NoxParser_parse_condition
+
+- Parâmetros:
+  @p        - Informações do parser
+
+- Objetivo:
+Analisar e construir nós AST para uma
+condição
+
+- Funcionamento:
+
+- Consumo de tokens:
+  - Tokens de __NoxParser_parse_comparison
+
+- Retorno:
+  * Ponteiro para o nó AST (__NoxAST_NODE*)
+  ! NULL
+
+- Notas:
+  * Implementa associatividade à esquerda.
+*/
+
+// Copier para bloco de condição
+static inline __NoxValue_BOOLEAN_TYPE
+  __NoxParser_condition_copier(
+    void* dest, const void* src
+  ) {
+  if (src == NULL)
+    { return __NoxBool_FALSE_VALUE; }
+
+  __NoxAST_NODE* d = (__NoxAST_NODE*)
+    _NOX_ALLOC(sizeof(__NoxAST_NODE));
+  if (d == NULL) 
+    { return __NoxBool_FALSE_VALUE; }
+
+  __NoxAST_NODE* s =
+    *(__NoxAST_NODE**)src;
+
+  if (s->_type == AST_IDENTIFIER ||
+      s->_type == AST_LITERAL) 
+    { d->data.token = s->data.token; }
+
+  else if (s->_type == AST_BINARY) {
+    d->data.binary.op = s->data.binary.op;
+  
+    if (
+      !__NoxParser_condition_copier(
+        (void**)d->data.binary.left,
+        (void*)s->data.binary.left
+      ) \
+    || \
+      !__NoxParser_condition_copier(
+        (void**)d->data.binary.right,
+        (void*)s->data.binary.right
+      )
+    )
+    { __NoxParser_ast_free(d);
+      return __NoxBool_FALSE_VALUE; }
+  }
+
+  else if (s->_type == AST_ASSIGNMENT) {
+    if (
+      !__NoxParser_condition_copier(
+        (void**)d->data.assignment.identifier,
+        (void*)s->data.assignment.identifier
+      ) \
+    || \
+      !__NoxParser_condition_copier(
+        (void**)d->data.assignment.value,
+        (void*)s->data.assignment.value
+      )
+    )
+    { __NoxParser_ast_free(d);
+      return __NoxBool_FALSE_VALUE; }
+
+    d->data.assignment.type =
+      s->data.assignment.type;
+
+    d->data.assignment.explicit_type =
+      s->data.assignment.explicit_type;
+  }
+
+  d->_type = s->_type;
+  *(__NoxAST_NODE**)dest = d;
+  return __NoxBool_TRUE_VALUE;
+}
+
+
+// Destrutor para bloco de condição
+static inline void
+  __NoxParser_condition_destructor(void* element)
+{
+  if (element == NULL) return;
+
+  __NoxParser_ast_free(*(__NoxAST_NODE**)element);
+}
+
+static inline __NoxAST_NODE*
+  __NoxParser_parse_condition(
+    parser_info* p
+  ) {
+  if (!__NoxParser_is_parserinfo_valid(p))
+    { return NULL; }
+
+  _NOX_DEBUG_LOG(
+    DEBUG_INFO,
+    "PARSER",
+    "parse_condition",
+    "iniciado\n"
+  );
+
+  _NOX_DEBUG_LOG(
+    DEBUG_VERIFY,
+    "PARSER",
+    "parse_condition",
+    "token atual: %s\n",
+    __NoxDebug_show_token(__NoxParser_peek(p, 0))
+  );
+  if (!__NoxParser_match(p, IF, 0)) 
+    { return NULL; }
+
+  __NoxParser_advance(p, 0); // consome 'if'
+
+  _NOX_DEBUG_LOG(
+    DEBUG_INFO,
+    "PARSER",
+    "parse_condition",
+    "obtendo condição\n"
+  );
+  __NoxAST_NODE* condition =
+    __NoxParser_parse_logical_or(p);
+  if (condition == NULL) {
+    _NOX_DEBUG_LOG(
+      DEBUG_VERIFY,
+      "PARSER",
+      "parse_condition",
+      "não foi possível obter condição\n"
+    );
+
+    const __NoxToken__* t =
+      __NoxParser_peek(p, -1);
+
+    if (t == NULL) 
+      { return NULL; }
+
+    if (!__NoxError_free(
+        __NoxParser_create_error(
+          p,
+          ERROR_SYNTAX,
+          t->line,
+          t->column,
+          t->column + t->length,
+          "expected expression"
+        )
+      )) {
+      _NOX_DEBUG_LOG(
+        DEBUG_ERROR,
+        "PARSER",
+        "parse_condition",
+        "Não foi possível liberar erro 'expected expression'\n"
+      );
+    }
+    return NULL;
+  }
+  else {
+    _NOX_DEBUG_LOG(
+      DEBUG_VERIFY,
+      "PARSER",
+      "parse_condition",
+      "condição obtida\n"
+    );
+  }
+
+  // Pula linhas
+  while (__NoxParser_match(p, NEW_LINE, 0))
+    { __NoxParser_advance(p, 0); }
+  // ---
+
+  if (!__NoxParser_expect(
+    p,
+    LBRACE,
+    "expected '{'"
+  )) {
+    __NoxParser_ast_free(condition);
+    return NULL;
+  }
+  __NoxParser_advance(p, 0); // Consome '{'
+
+  _NOX_DEBUG_LOG(
+    DEBUG_INFO,
+    "PARSER",
+    "parse_condition",
+    "criando bloco 'then'\n"
+  );
+  __NoxDynaArr__* then_block = 
+    __NoxDynaArr_create(
+      sizeof(__NoxAST_NODE),
+      __NoxParser_condition_copier,
+      __NoxParser_condition_destructor,
+      NULL
+    );
+
+  if (then_block == NULL) {
+    _NOX_DEBUG_LOG(
+      DEBUG_ERROR,
+      "PARSER",
+      "parse_condition",
+      "bloco 'then' = NULL\n"
+    );
+
+    const __NoxToken__* t =
+      __NoxParser_peek(p, 0);
+
+    if (t == NULL) {
+      __NoxParser_ast_free(condition);
+      return NULL;
+    }
+
+    __NoxError_free(
+      __NoxParser_create_error(
+        p,
+        ERROR_SYNTAX,
+        t->line,
+        t->column,
+        t->column + t->length,
+        "expected expression after condition branch"
+      )
+    );
+    __NoxParser_ast_free(condition);
+    return NULL;
+  }
+
+  // parse do bloco 'then' até '}'
+  while (!__NoxParser_match(p, RBRACE, 0))
+  {
+    if (__NoxParser_match(p, EOF_TOKEN, 0)) {
+      const __NoxToken__* t =
+        __NoxParser_peek(p, 0);
+      if (t == NULL) {
+        __NoxParser_ast_free(condition);
+        __NoxDynaArr_free(then_block);
+        return NULL;
+      }
+
+      if (!__NoxError_free(
+        __NoxParser_create_error(
+          p,
+          ERROR_SYNTAX,
+          t->line,
+          t->column,
+          t->column + t->length,
+          "'{' not closed"
+        )
+      )) {
+        __NoxParser_ast_free(condition);
+        __NoxDynaArr_free(then_block);
+      }
+
+      return NULL;
+    }
+
+    // Pula linhas
+    while (__NoxParser_match(p, NEW_LINE, 0))
+      { __NoxParser_advance(p, 0); }
+    // ---
+
+    if (__NoxParser_match(p, RBRACE, 0)) break;
+
+    __NoxAST_NODE* stmt = NULL;
+    if (
+      __NoxParser_match(p, IDENTIFIER, 0) &&
+      (
+        __NoxParser_match(p, ASSIGN, 1) ||
+        __NoxParser_match(p, PIPE, 1)
+      )
+    ) { 
+      _NOX_DEBUG_LOG(
+        DEBUG_INFO,
+        "PARSER",
+        "parse_condition",
+        "iniciando 'parse_statement'\n"
+      );
+      stmt = __NoxParser_parse_statement(p); 
+    }
+
+    else if (p->tokens[p->pos]._type == LITERAL &&
+    p->tokens[p->pos]._literal_type == VALUE_INT_LITERAL)
+    { 
+      _NOX_DEBUG_LOG(
+        DEBUG_INFO,
+        "PARSER",
+        "parse_condition",
+        "iniciando 'parse_expression'\n"
+      );
+      stmt = __NoxParser_parse_expression(p); 
+    }
+
+    else if (p->tokens[p->pos]._type == IF) {
+      _NOX_DEBUG_LOG(
+        DEBUG_INFO,
+        "PARSER",
+        "parse_condition",
+        "iniciando 'parse_condition'\n"
+      );
+
+      stmt = __NoxParser_parse_condition(p); 
+    }
+
+    else {
+      _NOX_DEBUG_LOG(
+        DEBUG_INFO,
+        "PARSER",
+        "parse_condition",
+        "iniciando 'parse_primary'\n"
+      );
+      stmt = __NoxParser_parse_primary(p); 
+    }
+
+    if (
+      stmt != NULL &&
+      __NoxDynaArr_push(
+        then_block,
+        &stmt,
+        sizeof(__NoxAST_NODE*)
+      )
+    ) { continue; }
+
+    __NoxParser_ast_free(condition);
+    __NoxDynaArr_free(then_block);
+    return NULL;
+  }
+
+  __NoxParser_advance(p, 0); // consome '}'
+
+  __NoxAST_NODE* else_branch = NULL;
+  // Pula linhas
+    while (__NoxParser_match(p, NEW_LINE, 0))
+    { __NoxParser_advance(p, 0); }
+  // ---
+  if (__NoxParser_match(p, ELSE, 0)) {
+    __NoxParser_advance(p, 0); // consome 'else'
+
+    if (__NoxParser_match(p, IF, 0)) {
+      // Recursão: 'else if'
+      else_branch = __NoxParser_parse_condition(p); 
+      if (else_branch == NULL) {
+        _NOX_DEBUG_LOG(
+          DEBUG_ERROR,
+          "PARSER",
+          "parse_condition",
+          "else_branch = NULL\n"
+        );
+        __NoxParser_ast_free(condition);
+        __NoxDynaArr_free(then_block);
+        return NULL;
+      }
+    }
+    else {
+      // Pula linhas
+      while (__NoxParser_match(p, NEW_LINE, 0))
+      { __NoxParser_advance(p, 0); }
+      // ---
+
+      if (!__NoxParser_expect(
+        p,
+        RBRACE,
+        "expected '{'")) {
+        __NoxParser_ast_free(condition);
+        __NoxDynaArr_free(then_block);
+        return NULL;
+      }
+
+      __NoxDynaArr__* else_block =
+        __NoxDynaArr_create(
+          sizeof(__NoxAST_NODE),
+          NULL,
+          __NoxParser_condition_destructor,
+          NULL
+        );
+      if (else_block == NULL) {
+        _NOX_DEBUG_LOG(
+          DEBUG_ERROR,
+          "PARSER",
+          "parse_condition",
+          "erro ao criar array dentro do loop de '}'"
+        );
+
+        __NoxParser_ast_free(condition);
+        __NoxDynaArr_free(then_block);
+        return NULL;
+      }
+
+      while (!__NoxParser_match(p, RBRACE, 0)) {
+        if (__NoxParser_match(p, EOF_TOKEN, 0)) {
+          const __NoxToken__* t =
+        __NoxParser_peek(p, 0);
+          if (t == NULL) {
+            __NoxParser_ast_free(condition);
+            __NoxDynaArr_free(then_block);
+            return NULL;
+          }
+
+          if (!__NoxError_free(
+            __NoxParser_create_error(
+              p,
+              ERROR_SYNTAX,
+              t->line,
+              t->column,
+              t->column + t->length,
+              "'{' not closed"
+            )
+          )) {
+            __NoxParser_ast_free(condition);
+            __NoxDynaArr_free(then_block);
+          }
+
+          return NULL;
+        }
+
+        // Pula linhas
+        while (__NoxParser_match(p, NEW_LINE, 0))
+          { __NoxParser_advance(p, 0); }
+        // ---
+
+        if (__NoxParser_match(p, RBRACE, 0)) { break; }
+
+        __NoxAST_NODE* stmt = NULL;
+        if (
+          __NoxParser_match(p, IDENTIFIER, 0) &&
+          (
+            __NoxParser_match(p, ASSIGN, 1) ||
+            __NoxParser_match(p, PIPE, 1)
+          )
+        ) { 
+          _NOX_DEBUG_LOG(
+            DEBUG_INFO,
+            "PARSER",
+            "parse_condition",
+            "iniciando 'parse_statement'\n"
+          );
+          stmt = __NoxParser_parse_statement(p); 
+        }
+
+        else if (p->tokens[p->pos]._type == LITERAL &&
+        p->tokens[p->pos]._literal_type == VALUE_INT_LITERAL)
+        { 
+          _NOX_DEBUG_LOG(
+            DEBUG_INFO,
+            "PARSER",
+            "parse_condition",
+            "iniciando 'parse_expression'\n"
+          );
+          stmt = __NoxParser_parse_expression(p); 
+        }
+
+        else if (p->tokens[p->pos]._type == IF) {
+          _NOX_DEBUG_LOG(
+            DEBUG_INFO,
+            "PARSER",
+            "parse_condition",
+            "iniciando 'parse_condition'\n"
+          );
+
+          stmt = __NoxParser_parse_condition(p); 
+        }
+
+        else {
+          _NOX_DEBUG_LOG(
+            DEBUG_INFO,
+            "PARSER",
+            "parse_condition",
+            "iniciando 'parse_primary'\n"
+          );
+          stmt = __NoxParser_parse_primary(p); 
+        }
+
+        if (
+          stmt != NULL &&
+          __NoxDynaArr_push(
+            then_block,
+            &stmt,
+            sizeof(__NoxAST_NODE*)
+          )
+        ) { continue; }
+
+        __NoxParser_ast_free(condition);
+        __NoxDynaArr_free(then_block);
+        return NULL;
+      }
+
+      __NoxParser_advance(p, 0); // consome '}'
+    }
+  }
+
+  // Parsing de ELSE (opcional)
+  if (__NoxParser_match(p, ELSE, 0)) {
+    __NoxParser_advance(p, 0); // consome 'else'
+
+    if (__NoxParser_match(p, IF, 0))
+      // Recursão: 'else if'
+      { else_branch = __NoxParser_parse_condition(p); }
+
+    
+  }
+}
+
+// =========================
 
 
 /*
@@ -1451,7 +2047,7 @@ static inline __NoxAST_PROGRAM*
     "alocando 'main_node'"
   );
   __NoxAST_PROGRAM* main_node = (__NoxAST_PROGRAM*)\
-      malloc(sizeof(__NoxAST_PROGRAM));
+      _NOX_ALLOC(sizeof(__NoxAST_PROGRAM));
   if (main_node == NULL)
     { _NOX_DEBUG_LOG(
         DEBUG_ERROR,
@@ -1480,7 +2076,7 @@ static inline __NoxAST_PROGRAM*
         "parse_program",
         "\nerro ao criar 'main_node->statements'\n"
       );
-      free(main_node);
+      _NOX_FREE(main_node);
       return NULL; }
 
   _NOX_DEBUG_LOG(
@@ -1521,32 +2117,48 @@ static inline __NoxAST_PROGRAM*
         __NoxParser_match(p, ASSIGN, 1) ||
         __NoxParser_match(p, PIPE, 1)
       )
-    ) { _NOX_DEBUG_LOG(
-          DEBUG_INFO,
-          "PARSER",
-          "parse_program",
-          "iniciando 'parse_statement'\n"
-        );
-        node = __NoxParser_parse_statement(p); }
+    ) { 
+      _NOX_DEBUG_LOG(
+        DEBUG_INFO,
+        "PARSER",
+        "parse_program",
+        "iniciando 'parse_statement'\n"
+      );
+      node = __NoxParser_parse_statement(p); 
+    }
 
     else if (p->tokens[p->pos]._type == LITERAL &&
     p->tokens[p->pos]._literal_type == VALUE_INT_LITERAL)
-      { _NOX_DEBUG_LOG(
-          DEBUG_INFO,
-          "PARSER",
-          "parse_program",
-          "iniciando 'parse_expression'\n"
-        );
-        node = __NoxParser_parse_expression(p); }
+    { 
+      _NOX_DEBUG_LOG(
+        DEBUG_INFO,
+        "PARSER",
+        "parse_program",
+        "iniciando 'parse_expression'\n"
+      );
+      node = __NoxParser_parse_expression(p); 
+    }
 
-    else { _NOX_DEBUG_LOG(
-            DEBUG_INFO,
-            "PARSER",
-            "parse_program",
-            "iniciando 'parse_primary'\n"
-          );
-          node = __NoxParser_parse_primary(p); 
-        }
+    else if (p->tokens[p->pos]._type == IF) {
+      _NOX_DEBUG_LOG(
+        DEBUG_INFO,
+        "PARSER",
+        "parse_program",
+        "iniciando 'parse_condition'\n"
+      );
+
+      node = __NoxParser_parse_condition(p); 
+    }
+
+    else {
+      _NOX_DEBUG_LOG(
+        DEBUG_INFO,
+        "PARSER",
+        "parse_program",
+        "iniciando 'parse_primary'\n"
+      );
+      node = __NoxParser_parse_primary(p); 
+    }
     
     _NOX_DEBUG_LOG(
       DEBUG_INFO,
@@ -1564,7 +2176,7 @@ static inline __NoxAST_PROGRAM*
           "node = null\n"
         );
         __NoxDynaArr_free(main_node->statements);
-        free(main_node);
+        _NOX_FREE(main_node);
         return NULL; }
 
     if (!__NoxDynaArr_push(main_node->statements, &node, sizeof(__NoxAST_NODE*)))
@@ -1576,7 +2188,7 @@ static inline __NoxAST_PROGRAM*
         );
         __NoxDynaArr_free(main_node->statements);
         __NoxParser_ast_free(node);
-        free(main_node);
+        _NOX_FREE(main_node);
         return NULL; }
   }
 

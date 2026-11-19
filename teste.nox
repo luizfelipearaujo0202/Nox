@@ -1,1 +1,2 @@
-a|string| = 1
+x|int| = 5
+x = "a"
