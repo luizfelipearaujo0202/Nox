@@ -233,7 +233,7 @@ __NoxExec_calculate(__NoxExec_context* c)
 
   long res = 0;
 
-  _NOX_DEBUG_LOG(DEBUG_VERIFY, "EXECUTOR", "calculate", "\noperator: %s", 
+  _NOX_DEBUG_LOG(DEBUG_VERIFY, "EXECUTOR", "calculate", "operator: %s\n", 
     __NoxDebug_show_ast_operator(node));
   
   if (node->data.binary.op == AST_PLUS) 
@@ -292,29 +292,19 @@ __NoxExec_calculate(__NoxExec_context* c)
     else 
       { res = left % right; } 
   }
-  else {
-    const __NoxToken__* t =
-      node->data.binary.left->data.token;
 
-    if (!__NoxExec_create_error(
-      c,
-      ERROR_EXPRESSION,
-      NULL,
-      t->line,
-      t->column,
-      0,
-      "division by zero"
-    )) {
-      _NOX_DEBUG_LOG(
-        DEBUG_ERROR,
-        "EXECUTOR",
-        "calculate",
-        "erro de divisão por 0 não registrado\n"
-      );
-    }
-    r.status = CALC_INVALID_EXPRESSION; 
-    return r; 
-  }
+  else if (node->data.binary.op == AST_EQUAL)
+    { res = (left == right); }
+  else if (node->data.binary.op == AST_NOT_EQUAL)
+    { res = (left != right); }
+  else if (node->data.binary.op == AST_LESS)
+    { res = (left < right); }
+  else if (node->data.binary.op == AST_GREATER)
+    { res = (left > right); }
+  else if (node->data.binary.op == AST_LESS_EQUAL)
+    { res = (left <= right); }
+  else if (node->data.binary.op == AST_GREATER_EQUAL)
+    { res = (left >= right); }
 
   r.result = res;
   _NOX_DEBUG_LOG(DEBUG_VERIFY, "EXECUTOR", "calculate", "\n");
@@ -345,9 +335,11 @@ __NoxExec_read_identifier(__NoxExec_context* c)
         "read_identifier",
         "node = null"
       );
+      return NULL;
     }
     c->node = node;
   }
+
   if (node->_type != AST_ASSIGNMENT)
     { _NOX_DEBUG_LOG(
         DEBUG_ERROR,
@@ -466,9 +458,12 @@ __NoxExec_read_value(__NoxExec_context* c)
         "read_value",
         "node = null"
       );
+
+      return NULL;
     }
     c->node = node;
   }
+
   if (node->_type != AST_ASSIGNMENT)
     { _NOX_DEBUG_LOG(
         DEBUG_ERROR,
@@ -577,19 +572,22 @@ __NoxExec_write_identifier(__NoxExec_context* c)
   if (!__NoxExec_context_is_valid(c))
     { return __NoxBool_FALSE_VALUE; }
 
-  __NoxAST_NODE* node = *(__NoxAST_NODE**)\
-    __NoxDynaArr_get(c->program->statements, c->index);
+  __NoxAST_NODE* node = c->node;
   if (node == NULL) {
-    _NOX_DEBUG_LOG(
-      DEBUG_ERROR,
-      "EXECUTOR",
-      "write_identifier",
-      "node = null"
-    );
-    return __NoxBool_FALSE_VALUE;
-  }
+       node = *(__NoxAST_NODE**)\
+      __NoxDynaArr_get(c->program->statements, c->index);
+    if (node == NULL) {
+      _NOX_DEBUG_LOG(
+        DEBUG_ERROR,
+        "EXECUTOR",
+        "read_value",
+        "node = null"
+      );
 
-  c->node = node;
+      return __NoxBool_FALSE_VALUE;
+    }
+    c->node = node;
+  }
 
   _NOX_DEBUG_LOG(
     DEBUG_VERIFY,
@@ -771,6 +769,18 @@ __NoxExec_write_identifier(__NoxExec_context* c)
     }
   }
 
+  if (value == NULL) {
+    _NOX_DEBUG_LOG(
+      DEBUG_ERROR,
+      "EXECUTOR",
+      "write_identifier",
+      "'value' == NULL\n"
+    );
+    _NOX_FREE(key);
+    _NOX_FREE(value_str);
+    return __NoxBool_FALSE_VALUE;
+  }
+
   _NOX_DEBUG_LOG(
     DEBUG_INFO,
     "EXECUTOR",
@@ -798,7 +808,9 @@ __NoxExec_write_identifier(__NoxExec_context* c)
   const __NoxToken__* t = 
     node->data.assignment.identifier->data.token;
   const __NoxToken__* v =
-    node->data.assignment.value->data.token;
+    __NoxAST_get_first_token(node->data.assignment.value);
+  
+  if (v == NULL) v = t;
 
   __NoxDebug_show_var(existing);
 
@@ -826,15 +838,8 @@ __NoxExec_write_identifier(__NoxExec_context* c)
       "write_identifier",
       "Mismatch de tipo: '%s' em variável de tipo '%s'\n",
       __NoxDebug_value_type_name(value->_t),
-        __NoxDebug_value_type_name(existing->declared_type)
+      __NoxDebug_value_type_name(decl_type)
     );
-
-    /*
-    !CRIAR NOTA DO ERRO!!
-    ! "note: declared before here:"
-    ! 2 | x|int| = 5
-    !       ^^^
-    */
 
     _NOX_DEBUG_LOG(
       DEBUG_INFO,
@@ -870,7 +875,7 @@ __NoxExec_write_identifier(__NoxExec_context* c)
     if(!__NoxExec_create_error(
       c, ERROR_TYPE, 
       note,
-      t->line,
+      v->line,
       v->column,
       v->column + v->length,
       "cannot assign type '%s' to fixed variable '%s' of type '%s'",
@@ -905,7 +910,6 @@ __NoxExec_write_identifier(__NoxExec_context* c)
         _NOX_FREE(value);
     }
 
-    __NoxError_note_destructor(note);
     _NOX_FREE(key);
     _NOX_FREE(value_str);
     return __NoxBool_FALSE_VALUE;
@@ -942,6 +946,158 @@ __NoxExec_write_identifier(__NoxExec_context* c)
   return __NoxBool_TRUE_VALUE;
 }
 
+
+static inline __NoxValue_BOOLEAN_TYPE
+  __NoxExec_process_node(
+    __NoxExec_context* c,
+    __NoxAST_NODE* node
+  );
+
+static inline __NoxValue_BOOLEAN_TYPE
+__NoxExec_process_statement_array(
+  __NoxExec_context* c,
+  __NoxDynaArr__* statements
+) {
+  if (!__NoxExec_context_is_valid(c))
+    { return __NoxBool_FALSE_VALUE; }
+
+  if (statements == NULL)
+    { return __NoxBool_FALSE_VALUE; }
+  if (!__NoxDynaArr_is_valid(statements))
+    { return __NoxBool_FALSE_VALUE; }
+
+  _NOX_DEBUG_LOG(
+    DEBUG_INFO,
+    "EXECUTOR",
+    "process_statement_array",
+    "Processing %zu statements\n",
+    statements->count
+  );
+
+  for (size_t i = 0; i < statements->count; i++) {
+    _NOX_DEBUG_LOG(
+      DEBUG_VERIFY,
+      "EXECUTOR",
+      "process_statement_array",
+      "Statement %zu/%zu\n",
+      i + 1, statements->count
+    );
+
+    __NoxAST_NODE* node =
+      *(__NoxAST_NODE**)__NoxDynaArr_get(
+        statements, i
+      );
+
+    if (node == NULL) {
+      _NOX_DEBUG_LOG(
+        DEBUG_ERROR,
+        "EXECUTOR",
+        "process_statement_array",
+        "Statement at index %zu is NULL\n",
+        i
+      );
+      return __NoxBool_FALSE_VALUE;
+    }
+
+    if (!__NoxExec_process_node(c, node)) { 
+      _NOX_DEBUG_LOG(
+        DEBUG_ERROR,
+        "EXECUTOR",
+        "process_statement_array",
+        "Failed to execute statement at index %zu\n",
+        i
+      );
+      return __NoxBool_FALSE_VALUE; 
+    }
+  }
+
+  return __NoxBool_TRUE_VALUE;
+}
+
+
+static inline __NoxValue_BOOLEAN_TYPE
+__NoxExec_process_node(
+  __NoxExec_context *c,
+  __NoxAST_NODE *node
+) {
+  if (!__NoxExec_context_is_valid(c))
+    { return __NoxBool_FALSE_VALUE; }
+
+  if (node == NULL) {
+    _NOX_DEBUG_LOG(
+      DEBUG_ERROR,
+      "EXECUTOR",
+      "process_node",
+      "Cannot process NULL node\n"
+    );
+  }
+
+  c->node = node;
+
+  _NOX_DEBUG_LOG(
+    DEBUG_INFO,
+    "EXECUTOR",
+    "process_node",
+    "Processing node: %s\n",
+    __NoxDebug_show_ast_type(node)
+  );
+
+  switch (node->_type) {
+    case AST_ASSIGNMENT:
+      return __NoxExec_write_identifier(c);
+
+    case AST_BINARY:
+      return
+        (__NoxExec_calculate(c).status == CALC_OK)
+        ? __NoxBool_TRUE_VALUE
+        : __NoxBool_FALSE_VALUE;
+
+    case AST_IF: {
+      if (node->data.if_statement.condition == NULL)
+        { return __NoxBool_FALSE_VALUE; }
+
+      __NoxExec_context condition_ctx = *c;
+      condition_ctx.node =
+          node->data.if_statement.condition;
+
+      __NoxExec_CALC_RESULT result =
+          __NoxExec_calculate(&condition_ctx);
+
+      if (result.status != CALC_OK)
+        { return __NoxBool_FALSE_VALUE; }
+
+      if (result.result != 0) {
+        // executa THEN
+        return __NoxExec_process_statement_array(
+          c,
+          node->data.if_statement.then_branch
+        );
+      }
+
+      if (node->data.if_statement.else_branch != NULL) {
+        // Executa ELSE se existir
+        return __NoxExec_process_statement_array(
+          c,
+          node->data.if_statement.else_branch
+        );
+      }
+
+      return __NoxBool_TRUE_VALUE;
+    }
+
+    default: 
+      _NOX_DEBUG_LOG(
+        DEBUG_ERROR,
+        "EXECUTOR",
+        "process_node",
+        "Unknown node: %s",
+        __NoxDebug_show_ast_type(node)
+      );
+      return __NoxBool_FALSE_VALUE;
+  }
+}
+
+
 static inline __NoxValue_BOOLEAN_TYPE
 __NoxExec_process_single(__NoxExec_context* c, size_t index) 
 {
@@ -957,55 +1113,9 @@ __NoxExec_process_single(__NoxExec_context* c, size_t index)
     return __NoxBool_FALSE_VALUE;
   }
 
-  _NOX_DEBUG_LOG(DEBUG_INFO, "EXECUTOR", "process_single", "Escolhendo workers\n");
-  switch(node->_type) {
-    case AST_ASSIGNMENT: {
-      _NOX_DEBUG_LOG(DEBUG_INFO, "EXECUTOR", "process_single", "Executando 'write_identifier'\n");
-      if (!__NoxExec_write_identifier(c))
-        { _NOX_DEBUG_LOG(
-            DEBUG_ERROR,
-            "EXECUTOR", 
-            "process_single", 
-            "Erro ao executar 'write_identifier'\n"
-          ); 
-          return __NoxBool_FALSE_VALUE; }
-    } break;
-
-    case AST_IDENTIFIER: {  
-      _NOX_DEBUG_LOG(DEBUG_INFO, "EXECUTOR", "process_single", "Executando 'read_value'\n");  
-      if (!__NoxExec_read_value(c))  
-        { _NOX_DEBUG_LOG(
-            DEBUG_ERROR,
-            "EXECUTOR", 
-            "process_single", 
-            "Erro ao executar 'read_value'\n"
-          );  
-          return __NoxBool_FALSE_VALUE; }  
-    } break;  
-
-    case AST_BINARY: {  
-      _NOX_DEBUG_LOG(DEBUG_INFO, "EXECUTOR", "process_single", "Executando 'calculate'\n");  
-      if (__NoxExec_calculate(c).status != CALC_OK)  
-        { _NOX_DEBUG_LOG(
-            DEBUG_ERROR,
-            "EXECUTOR", 
-            "process_single", 
-            "Erro ao executar 'calculate'\n"
-          );   
-          return __NoxBool_FALSE_VALUE; }  
-    } break;  
-
-    default: {  
-      _NOX_DEBUG_LOG(DEBUG_ERROR, "EXECUTOR", "process_single", "Tipo da AST desconhecido\n");  
-      return __NoxBool_FALSE_VALUE;   
-    }
-  }
-
   c->index = index;
-  c->node = node;
-  _NOX_DEBUG_LOG(DEBUG_INFO, "EXECUTOR", "process_single", "Execução concluída\n");
 
-  return __NoxBool_TRUE_VALUE;
+  return __NoxExec_process_node(c, node);
 }
 
 

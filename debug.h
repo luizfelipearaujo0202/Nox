@@ -85,12 +85,14 @@ static inline const char*
   __NoxDebug_show_ast_type(const __NoxAST_NODE* n)
   {
   if (n == NULL) return "NULL_NODE";
+
   switch(n->_type) {
-    case AST_LITERAL: return "AST_LITERAL";
-    case AST_IDENTIFIER: return "AST_IDENTIFIER";
-    case AST_UNARY: return "AST_UNARY";
-    case AST_BINARY: return "AST_BINARY";
-    case AST_ASSIGNMENT: return "AST_ASSIGNMENT";
+    case AST_LITERAL:     return "AST_LITERAL";
+    case AST_IDENTIFIER:  return "AST_IDENTIFIER";
+    case AST_UNARY:       return "AST_UNARY";
+    case AST_BINARY:      return "AST_BINARY";
+    case AST_ASSIGNMENT:  return "AST_ASSIGNMENT";
+    case AST_IF:          return "AST_IF";
     default: return "UNKNOWN_AST_TYPE";
   }
 }
@@ -104,6 +106,16 @@ static inline const char*
     case AST_MINUS: return "AST_MINUS";
     case AST_MULTIPLY: return "AST_MULTIPLY";
     case AST_PLUS: return "AST_PLUS";
+
+    case AST_EQUAL:         return "EQUAL";
+    case AST_NOT_EQUAL:     return "NOT_EQUAL";
+    case AST_LESS:          return "LESS";
+    case AST_GREATER:       return "GREATER";
+    case AST_LESS_EQUAL:    return "LESS_EQUAL";
+    case AST_GREATER_EQUAL: return "GREATER_EQUAL";
+
+    case AST_AND:           return "AND";
+    case AST_OR:            return "OR";
     default: return "UNKNOWN_OPERATOR";
   }
 }
@@ -183,6 +195,7 @@ __NoxDebug_ast_type_name(__NoxAST_TYPE type) {
     case AST_BINARY:      return "BINARY";
     case AST_UNARY:       return "UNARY";
     case AST_ASSIGNMENT:  return "ASSIGNMENT";
+    case AST_IF:          return "IF";
     default:              return "UNKNOWN";
   }
 }
@@ -190,11 +203,23 @@ __NoxDebug_ast_type_name(__NoxAST_TYPE type) {
 static inline const char*
 __NoxDebug_operator_name(__NoxAST_OPERATOR op) {
   switch (op) {
-    case AST_PLUS:      return "PLUS";
-    case AST_MINUS:     return "MINUS";
-    case AST_MULTIPLY:  return "MULTIPLY";
-    case AST_DIVIDE:    return "DIVIDE";
-    default:            return "UNKNOWN";
+    case AST_PLUS:          return "PLUS";
+    case AST_MINUS:         return "MINUS";
+    case AST_MULTIPLY:      return "MULTIPLY";
+    case AST_DIVIDE:        return "DIVIDE";
+    case AST_MODULE:        return "MODULE";
+
+    case AST_EQUAL:         return "EQUAL";
+    case AST_NOT_EQUAL:     return "NOT_EQUAL";
+    case AST_LESS:          return "LESS";
+    case AST_GREATER:       return "GREATER";
+    case AST_LESS_EQUAL:    return "LESS_EQUAL";
+    case AST_GREATER_EQUAL: return "GREATER_EQUAL";
+
+    case AST_AND:           return "AND";
+    case AST_OR:            return "OR";
+
+    default: return "UNKNOWN";
   }
 }
 
@@ -585,6 +610,89 @@ __NoxDebug_show_table(
 
 static inline void
 __NoxDebug_show_ast_node(
+  const char* caller,
+  const char* prefix,
+  const char* branch,
+  int is_last,
+  const char* label,
+  const __NoxAST_NODE* node,
+  size_t depth
+);
+
+static inline void
+__NoxDebug_show_ast_array(
+    const char* caller,
+    const char* prefix,
+    const char* branch,
+    const char* label,
+    const __NoxDynaArr__* arr,
+    size_t depth
+) {
+  char buffer[256];
+  char child_prefix[512];
+
+  __NoxDebug_tree_line(
+    caller, prefix, branch, label
+  );
+
+  if (arr == NULL) {
+    __NoxDebug_tree_line(
+      caller, prefix, "    └── ", "NULL"
+    );
+    return;
+  }
+
+  if (arr->data == NULL ||
+    arr->element_size < sizeof(__NoxAST_NODE*)) {
+    __NoxDebug_tree_line(
+      caller, prefix, "    └── ",
+      "Invalid AST array"
+    );
+    return;
+  }
+
+  snprintf(
+    buffer, sizeof(buffer),
+    "Statements: %zu",
+    arr->count
+  );
+
+  __NoxDebug_tree_line(
+    caller, prefix, "    ├── ", buffer
+  );
+
+  __NoxAST_NODE** nodes =
+    (__NoxAST_NODE**)arr->data;
+
+  snprintf(
+    child_prefix, sizeof(child_prefix),
+    "%s    ",
+    prefix
+  );
+
+  for (size_t i = 0; i < arr->count; i++) {
+    snprintf(
+      buffer, sizeof(buffer),
+      "Statement [%zu]",
+      i
+    );
+
+    __NoxDebug_show_ast_node(
+      caller,
+      child_prefix,
+      i == arr->count - 1
+          ? "└── "
+          : "├── ",
+      i == arr->count - 1,
+      buffer,
+      nodes[i],
+        depth + 1
+    );
+  }
+}
+
+static inline void
+__NoxDebug_show_ast_node(
     const char* caller,
     const char* prefix,
     const char* branch,
@@ -780,6 +888,46 @@ __NoxDebug_show_ast_node(
           "Payload not implemented in AST structure"
       );
       break;
+
+
+    case AST_IF: {
+        snprintf(
+            child_prefix, sizeof(child_prefix),
+            "%s%s",
+            prefix,
+            is_last ? "    " : "│   "
+        );
+
+        __NoxDebug_show_ast_node(
+            caller,
+            child_prefix,
+            "├── ",
+            0,
+            "Condition",
+            node->data.if_statement.condition,
+            depth + 1
+        );
+
+        __NoxDebug_show_ast_array(
+            caller,
+            child_prefix,
+            "├── ",
+            "Then Branch",
+            node->data.if_statement.then_branch,
+            depth + 1
+        );
+
+        __NoxDebug_show_ast_array(
+            caller,
+            child_prefix,
+            "└── ",
+            "Else Branch",
+            node->data.if_statement.else_branch,
+            depth + 1
+        );
+
+        break;
+    }
 
     default:
       __NoxDebug_tree_line(

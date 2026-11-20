@@ -1076,7 +1076,7 @@ static inline __NoxAST_NODE*
     if (key == NULL)
       { __NoxParser_ast_free(identifier); return NULL; }
 
-    memcpy(key, t->start, t->length);;
+    memcpy(key, t->start, t->length);
     key[t->length] = '\0';
     if (
       t->length == 3 &&
@@ -1127,6 +1127,7 @@ static inline __NoxAST_NODE*
     }
 
     _NOX_FREE(key);
+    __NoxParser_advance(p, 1);
 
     if (!__NoxParser_expect(
       p,
@@ -1210,7 +1211,7 @@ static inline __NoxAST_NODE*
     if (p->errors != NULL && p->errors->registry != NULL)
     {
       __NoxToken__* t =
-        __NoxParser_advance(p, 0);
+        __NoxParser_advance(p, 1);
 
       char msg[64];
       snprintf(msg, sizeof(msg),
@@ -1337,7 +1338,7 @@ static inline __NoxAST_NODE*
       current->_type == LESS_EQUAL ||
       current->_type == GREATER_EQUAL
     ) {
-      __NoxAST_OPERATOR op;
+      __NoxAST_OPERATOR op = AST_EQUAL; /* default seguro */
       switch (current->_type) {                                                                                      
         case EQUAL:         op = AST_EQUAL; break;
         case NOT_EQUAL:     op = AST_NOT_EQUAL; break;
@@ -1431,6 +1432,8 @@ static inline __NoxAST_NODE*
     { return NULL; }
 
   while (__NoxParser_peek(p, 0)->_type == OR) {
+    __NoxParser_advance(p, 0); // consome 'or'  <<-- FIX
+
     __NoxAST_NODE* right = __NoxParser_parse_logical_and(p);
     if (right == NULL)
       { __NoxParser_ast_free(left);
@@ -1481,72 +1484,6 @@ condição
   * Implementa associatividade à esquerda.
 */
 
-// Copier para bloco de condição
-static inline __NoxValue_BOOLEAN_TYPE
-  __NoxParser_condition_copier(
-    void* dest, const void* src
-  ) {
-  if (src == NULL)
-    { return __NoxBool_FALSE_VALUE; }
-
-  __NoxAST_NODE* d = (__NoxAST_NODE*)
-    _NOX_ALLOC(sizeof(__NoxAST_NODE));
-  if (d == NULL) 
-    { return __NoxBool_FALSE_VALUE; }
-
-  __NoxAST_NODE* s =
-    *(__NoxAST_NODE**)src;
-
-  if (s->_type == AST_IDENTIFIER ||
-      s->_type == AST_LITERAL) 
-    { d->data.token = s->data.token; }
-
-  else if (s->_type == AST_BINARY) {
-    d->data.binary.op = s->data.binary.op;
-  
-    if (
-      !__NoxParser_condition_copier(
-        (void**)d->data.binary.left,
-        (void*)s->data.binary.left
-      ) \
-    || \
-      !__NoxParser_condition_copier(
-        (void**)d->data.binary.right,
-        (void*)s->data.binary.right
-      )
-    )
-    { __NoxParser_ast_free(d);
-      return __NoxBool_FALSE_VALUE; }
-  }
-
-  else if (s->_type == AST_ASSIGNMENT) {
-    if (
-      !__NoxParser_condition_copier(
-        (void**)d->data.assignment.identifier,
-        (void*)s->data.assignment.identifier
-      ) \
-    || \
-      !__NoxParser_condition_copier(
-        (void**)d->data.assignment.value,
-        (void*)s->data.assignment.value
-      )
-    )
-    { __NoxParser_ast_free(d);
-      return __NoxBool_FALSE_VALUE; }
-
-    d->data.assignment.type =
-      s->data.assignment.type;
-
-    d->data.assignment.explicit_type =
-      s->data.assignment.explicit_type;
-  }
-
-  d->_type = s->_type;
-  *(__NoxAST_NODE**)dest = d;
-  return __NoxBool_TRUE_VALUE;
-}
-
-
 // Destrutor para bloco de condição
 static inline void
   __NoxParser_condition_destructor(void* element)
@@ -1554,6 +1491,156 @@ static inline void
   if (element == NULL) return;
 
   __NoxParser_ast_free(*(__NoxAST_NODE**)element);
+}
+
+// Copier para bloco de condição
+// Recebe @dest e @src como endereços de slots
+// do tipo __NoxAST_NODE* (é o que __NoxDynaArr_push
+// passa: (char*)data + n*element_size, com
+// element_size == sizeof(__NoxAST_NODE*)).
+static inline __NoxValue_BOOLEAN_TYPE
+  __NoxParser_condition_copier(
+    void* dest, const void* src
+  ) {
+  if (dest == NULL || src == NULL)
+    { return __NoxBool_FALSE_VALUE; }
+
+  __NoxAST_NODE* s = *(__NoxAST_NODE* const *)src;
+  if (s == NULL) {
+    *(__NoxAST_NODE**)dest = NULL;
+    return __NoxBool_TRUE_VALUE;
+  }
+
+  __NoxAST_NODE* d = (__NoxAST_NODE*)
+    _NOX_ALLOC(sizeof(__NoxAST_NODE));
+  if (d == NULL)
+    { return __NoxBool_FALSE_VALUE; }
+
+  d->_type = s->_type;
+  d->data = s->data;
+
+  switch (s->_type) {
+    case AST_LITERAL:
+    case AST_IDENTIFIER:
+    case AST_UNARY:
+      d->data.token = s->data.token;
+      break;
+
+    case AST_BINARY:
+      d->data.binary.op = s->data.binary.op;
+      if (
+        !__NoxParser_condition_copier(
+          (void*)&d->data.binary.left,
+          (void*)&s->data.binary.left
+        ) ||
+        !__NoxParser_condition_copier(
+          (void*)&d->data.binary.right,
+          (void*)&s->data.binary.right
+        )
+      ) {
+        __NoxParser_ast_free(d);
+        return __NoxBool_FALSE_VALUE;
+      }
+      break;
+
+    case AST_ASSIGNMENT:
+      d->data.assignment.type          = s->data.assignment.type;
+      d->data.assignment.explicit_type = s->data.assignment.explicit_type;
+      if (
+        !__NoxParser_condition_copier(
+          (void*)&d->data.assignment.identifier,
+          (void*)&s->data.assignment.identifier
+        ) ||
+        !__NoxParser_condition_copier(
+          (void*)&d->data.assignment.value,
+          (void*)&s->data.assignment.value
+        )
+      ) {
+        __NoxParser_ast_free(d);
+        return __NoxBool_FALSE_VALUE;
+      }
+      break;
+
+    case AST_IF: {
+      if (
+        !__NoxParser_condition_copier(
+          (void*)&d->data.if_statement.condition,
+          (void*)&s->data.if_statement.condition
+        )
+      ) {
+        __NoxParser_ast_free(d);
+        return __NoxBool_FALSE_VALUE;
+      }
+
+      d->data.if_statement.then_branch = NULL;
+      d->data.if_statement.else_branch = NULL;
+
+      if (s->data.if_statement.then_branch != NULL) {
+        __NoxDynaArr__* tb = __NoxDynaArr_create(
+          sizeof(__NoxAST_NODE*),
+          __NoxParser_condition_copier,
+          __NoxParser_condition_destructor,
+          NULL
+        );
+        if (tb == NULL) {
+          __NoxParser_ast_free(d);
+          return __NoxBool_FALSE_VALUE;
+        }
+
+        for (size_t i = 0; i < s->data.if_statement.then_branch->count; i++) {
+          void* src_slot = (char*)s->data.if_statement.then_branch->data
+                           + i * s->data.if_statement.then_branch->element_size;
+          __NoxAST_NODE* child = *(__NoxAST_NODE**)src_slot;
+
+          if (!__NoxDynaArr_push(tb, &child, sizeof(__NoxAST_NODE*))) {
+            __NoxDynaArr_free(tb);
+            __NoxParser_ast_free(d);
+            return __NoxBool_FALSE_VALUE;
+          }
+        }
+
+        d->data.if_statement.then_branch = tb;
+      }
+
+      if (s->data.if_statement.else_branch != NULL) {
+        __NoxDynaArr__* eb = __NoxDynaArr_create(
+          sizeof(__NoxAST_NODE*),
+          __NoxParser_condition_copier,
+          __NoxParser_condition_destructor,
+          NULL
+        );
+        if (eb == NULL) {
+          if (d->data.if_statement.then_branch)
+            __NoxDynaArr_free(d->data.if_statement.then_branch);
+          __NoxParser_ast_free(d);
+          return __NoxBool_FALSE_VALUE;
+        }
+
+        for (size_t i = 0; i < s->data.if_statement.else_branch->count; i++) {
+          void* src_slot = (char*)s->data.if_statement.else_branch->data
+                           + i * s->data.if_statement.else_branch->element_size;
+          __NoxAST_NODE* child = *(__NoxAST_NODE**)src_slot;
+
+          if (!__NoxDynaArr_push(eb, &child, sizeof(__NoxAST_NODE*))) {
+            __NoxDynaArr_free(eb);
+            if (d->data.if_statement.then_branch)
+              __NoxDynaArr_free(d->data.if_statement.then_branch);
+            __NoxParser_ast_free(d);
+            return __NoxBool_FALSE_VALUE;
+          }
+        }
+
+        d->data.if_statement.else_branch = eb;
+      }
+      break;
+    }
+
+    default:
+      break;
+  }
+
+  *(__NoxAST_NODE**)dest = d;
+  return __NoxBool_TRUE_VALUE;
 }
 
 static inline __NoxAST_NODE*
@@ -1655,7 +1742,7 @@ static inline __NoxAST_NODE*
   );
   __NoxDynaArr__* then_block = 
     __NoxDynaArr_create(
-      sizeof(__NoxAST_NODE),
+      sizeof(__NoxAST_NODE*),
       __NoxParser_condition_copier,
       __NoxParser_condition_destructor,
       NULL
@@ -1744,8 +1831,8 @@ static inline __NoxAST_NODE*
       stmt = __NoxParser_parse_statement(p); 
     }
 
-    else if (p->tokens[p->pos]._type == LITERAL &&
-    p->tokens[p->pos]._literal_type == VALUE_INT_LITERAL)
+    else if (__NoxParser_match(p, LITERAL, 0) &&
+             __NoxParser_peek(p, 0)->_literal_type == VALUE_INT_LITERAL)
     { 
       _NOX_DEBUG_LOG(
         DEBUG_INFO,
@@ -1756,7 +1843,7 @@ static inline __NoxAST_NODE*
       stmt = __NoxParser_parse_expression(p); 
     }
 
-    else if (p->tokens[p->pos]._type == IF) {
+    else if (__NoxParser_match(p, IF, 0)) {
       _NOX_DEBUG_LOG(
         DEBUG_INFO,
         "PARSER",
@@ -1777,73 +1864,101 @@ static inline __NoxAST_NODE*
       stmt = __NoxParser_parse_primary(p); 
     }
 
-    if (
-      stmt != NULL &&
-      __NoxDynaArr_push(
-        then_block,
-        &stmt,
-        sizeof(__NoxAST_NODE*)
-      )
-    ) { continue; }
+    if (stmt == NULL) {
+      __NoxParser_ast_free(condition);
+      __NoxDynaArr_free(then_block);
+      return NULL;
+    }
 
-    __NoxParser_ast_free(condition);
-    __NoxDynaArr_free(then_block);
-    return NULL;
+    if (!__NoxDynaArr_push(then_block, &stmt, sizeof(__NoxAST_NODE*))) {
+      __NoxParser_ast_free(stmt);
+      __NoxParser_ast_free(condition);
+      __NoxDynaArr_free(then_block);
+      return NULL;
+    }
+
+    /* array copiou; libera o original */
+    __NoxParser_ast_free(stmt);
   }
 
   __NoxParser_advance(p, 0); // consome '}'
 
-  __NoxAST_NODE* else_branch = NULL;
+  __NoxDynaArr__* else_block = NULL;
+
   // Pula linhas
-    while (__NoxParser_match(p, NEW_LINE, 0))
+  while (__NoxParser_match(p, NEW_LINE, 0))
     { __NoxParser_advance(p, 0); }
   // ---
+
   if (__NoxParser_match(p, ELSE, 0)) {
     __NoxParser_advance(p, 0); // consome 'else'
 
     if (__NoxParser_match(p, IF, 0)) {
-      // Recursão: 'else if'
-      else_branch = __NoxParser_parse_condition(p); 
-      if (else_branch == NULL) {
+      // Recursão: 'else if' — o if aninhado vira
+      // um único elemento de else_block
+      __NoxAST_NODE* nested_if = __NoxParser_parse_condition(p);
+      if (nested_if == NULL) {
         _NOX_DEBUG_LOG(
           DEBUG_ERROR,
           "PARSER",
           "parse_condition",
-          "else_branch = NULL\n"
+          "nested_if = NULL\n"
         );
         __NoxParser_ast_free(condition);
         __NoxDynaArr_free(then_block);
         return NULL;
       }
+
+      else_block = __NoxDynaArr_create(
+        sizeof(__NoxAST_NODE*),
+        __NoxParser_condition_copier,
+        __NoxParser_condition_destructor,
+        NULL
+      );
+      if (else_block == NULL) {
+        __NoxParser_ast_free(nested_if);
+        __NoxParser_ast_free(condition);
+        __NoxDynaArr_free(then_block);
+        return NULL;
+      }
+
+      if (!__NoxDynaArr_push(else_block, &nested_if, sizeof(__NoxAST_NODE*))) {
+        __NoxParser_ast_free(nested_if);
+        __NoxParser_ast_free(condition);
+        __NoxDynaArr_free(then_block);
+        __NoxDynaArr_free(else_block);
+        return NULL;
+      }
+      __NoxParser_ast_free(nested_if);
     }
     else {
       // Pula linhas
       while (__NoxParser_match(p, NEW_LINE, 0))
-      { __NoxParser_advance(p, 0); }
+        { __NoxParser_advance(p, 0); }
       // ---
 
       if (!__NoxParser_expect(
         p,
-        RBRACE,
+        LBRACE,
         "expected '{'")) {
         __NoxParser_ast_free(condition);
         __NoxDynaArr_free(then_block);
         return NULL;
       }
+      __NoxParser_advance(p, 0); // consome '{'
 
-      __NoxDynaArr__* else_block =
-        __NoxDynaArr_create(
-          sizeof(__NoxAST_NODE),
-          NULL,
-          __NoxParser_condition_destructor,
-          NULL
-        );
+      else_block = __NoxDynaArr_create(
+        sizeof(__NoxAST_NODE*),
+        __NoxParser_condition_copier,
+        __NoxParser_condition_destructor,
+        NULL
+      );
       if (else_block == NULL) {
         _NOX_DEBUG_LOG(
           DEBUG_ERROR,
           "PARSER",
           "parse_condition",
-          "erro ao criar array dentro do loop de '}'"
+          "erro ao criar 'else_block'"
         );
 
         __NoxParser_ast_free(condition);
@@ -1854,10 +1969,11 @@ static inline __NoxAST_NODE*
       while (!__NoxParser_match(p, RBRACE, 0)) {
         if (__NoxParser_match(p, EOF_TOKEN, 0)) {
           const __NoxToken__* t =
-        __NoxParser_peek(p, 0);
+            __NoxParser_peek(p, 0);
           if (t == NULL) {
             __NoxParser_ast_free(condition);
             __NoxDynaArr_free(then_block);
+            __NoxDynaArr_free(else_block);
             return NULL;
           }
 
@@ -1873,6 +1989,7 @@ static inline __NoxAST_NODE*
           )) {
             __NoxParser_ast_free(condition);
             __NoxDynaArr_free(then_block);
+            __NoxDynaArr_free(else_block);
           }
 
           return NULL;
@@ -1902,8 +2019,8 @@ static inline __NoxAST_NODE*
           stmt = __NoxParser_parse_statement(p); 
         }
 
-        else if (p->tokens[p->pos]._type == LITERAL &&
-        p->tokens[p->pos]._literal_type == VALUE_INT_LITERAL)
+        else if (__NoxParser_match(p, LITERAL, 0) &&
+                 __NoxParser_peek(p, 0)->_literal_type == VALUE_INT_LITERAL)
         { 
           _NOX_DEBUG_LOG(
             DEBUG_INFO,
@@ -1914,7 +2031,7 @@ static inline __NoxAST_NODE*
           stmt = __NoxParser_parse_expression(p); 
         }
 
-        else if (p->tokens[p->pos]._type == IF) {
+        else if (__NoxParser_match(p, IF, 0)) {
           _NOX_DEBUG_LOG(
             DEBUG_INFO,
             "PARSER",
@@ -1935,34 +2052,45 @@ static inline __NoxAST_NODE*
           stmt = __NoxParser_parse_primary(p); 
         }
 
-        if (
-          stmt != NULL &&
-          __NoxDynaArr_push(
-            then_block,
-            &stmt,
-            sizeof(__NoxAST_NODE*)
-          )
-        ) { continue; }
+        if (stmt == NULL) {
+          __NoxParser_ast_free(condition);
+          __NoxDynaArr_free(then_block);
+          __NoxDynaArr_free(else_block);
+          return NULL;
+        }
 
-        __NoxParser_ast_free(condition);
-        __NoxDynaArr_free(then_block);
-        return NULL;
+        if (!__NoxDynaArr_push(else_block, &stmt, sizeof(__NoxAST_NODE*))) {
+          __NoxParser_ast_free(stmt);
+          __NoxParser_ast_free(condition);
+          __NoxDynaArr_free(then_block);
+          __NoxDynaArr_free(else_block);
+          return NULL;
+        }
+
+        /* array copiou; libera o original */
+        __NoxParser_ast_free(stmt);
       }
 
       __NoxParser_advance(p, 0); // consome '}'
     }
   }
 
-  // Parsing de ELSE (opcional)
-  if (__NoxParser_match(p, ELSE, 0)) {
-    __NoxParser_advance(p, 0); // consome 'else'
-
-    if (__NoxParser_match(p, IF, 0))
-      // Recursão: 'else if'
-      { else_branch = __NoxParser_parse_condition(p); }
-
-    
+  // Monta nó AST_IF
+  __NoxAST_NODE* node = (__NoxAST_NODE*)
+    _NOX_ALLOC(sizeof(__NoxAST_NODE));
+  if (node == NULL) {
+    __NoxParser_ast_free(condition);
+    __NoxDynaArr_free(then_block);
+    if (else_block) __NoxDynaArr_free(else_block);
+    return NULL;
   }
+
+  node->_type = AST_IF;
+  node->data.if_statement.condition   = condition;
+  node->data.if_statement.then_branch = then_block;
+  node->data.if_statement.else_branch = else_block; // pode ser NULL
+
+  return node;
 }
 
 // =========================
@@ -2012,14 +2140,6 @@ chamando a função correta para cada caso.
 - Retorno:
   * Ponteiro para o nó AST de programa (array de nós AST, __NoxAST_PROGRAM*)
   ! NULL
-*/
-
-/*
-!
-! ARRUMAR O PARSE_PRIMARY PARA NÃO IDENTIFICAR TIPOS!
-! O tipo deve ser declarado com "|(tipo)|", e quem
-! deve reconhecê-lo é o parse_statement
-!
 */
 static inline void
   __NoxParser_program_destructor(void* element) {

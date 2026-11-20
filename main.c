@@ -18,7 +18,7 @@
 
 #include "file_ctrl.h"
 
-#include "parser/parser_refact.h"
+#include "parser/parser.h"
 #include "lexer.h"
 #include "executor.h"
 

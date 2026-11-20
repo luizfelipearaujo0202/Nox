@@ -59,8 +59,8 @@ struct __NoxAST_NODE {
 
     struct {
       struct __NoxAST_NODE* condition;
-      __NoxDynaArr__* then_branch;
-      __NoxDynaArr__* else_branch;
+      __NoxDynaArr__* then_branch; // Array of NODE*
+      __NoxDynaArr__* else_branch; // Array of NODE*
     } if_statement;
   
   } data;
@@ -77,3 +77,28 @@ typedef struct {
   __NoxToken__* tokens;
   __NoxError_context* errors;
 } parser_info;
+
+
+/*
+Função auxiliar para coleção do
+primeiro token de um node
+*/
+static inline const __NoxToken__*
+__NoxAST_get_first_token(const __NoxAST_NODE* node) {
+  if (node == NULL)
+    { return NULL; }
+
+  switch(node->_type) {
+    case AST_LITERAL:
+
+    case AST_IDENTIFIER:
+      return node->data.token;
+
+    case AST_BINARY:
+      return __NoxAST_get_first_token(
+        node->data.binary.left
+      );
+
+    default: return NULL;
+  }
+}

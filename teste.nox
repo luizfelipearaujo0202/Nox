@@ -1,2 +1,7 @@
-x|int| = 5
-x = "a"
+x = 10
+
+if x > 5 and x < 20 {
+    a = 1
+} else {
+    a = 0
+}

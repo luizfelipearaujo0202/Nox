@@ -38,6 +38,9 @@ __NoxMem_autopush(
 ) {
     if (!reg) return __NoxBool_TRUE_VALUE;   /* nada a registrar */
 
+    if (_NOX_MEM_CTX == NULL || _NOX_MEM_CTX->data == NULL)
+      { return __NoxBool_FALSE_VALUE; }
+
     /* aloca registro em heap; será liberado pelo destructor do dynamic array */
     __NoxMem_record* r = (__NoxMem_record*)malloc(sizeof(__NoxMem_record));
     if (!r) return __NoxBool_FALSE_VALUE;
@@ -51,7 +54,7 @@ __NoxMem_autopush(
     pthread_mutex_lock(&_NOX_MEM_MTX);
     __NoxValue_BOOLEAN_TYPE ok = __NoxDynaArr_push(
         _NOX_MEM_CTX->data,
-        r,                     /* armazenamos o ponteiro para o registro */
+        &r,                     /* armazenamos o ponteiro para o registro */
         sizeof(__NoxMem_record*)
     );
     pthread_mutex_unlock(&_NOX_MEM_MTX);
@@ -103,67 +106,113 @@ __NoxMem_free(
     free(ptr);
 }
 
-/* ----------------------------------------------------------------------
- *  ALLOC – registra alocação e devolve ponteiro
- * ---------------------------------------------------------------------- */
+
 static inline void*
 __NoxMem_alloc(
     int    size,
     const char* caller,
     int    reg
 ) {
-    _NOX_DEBUG_LOG(
-        DEBUG_MEMORY,
-        "MEM",
-        "alloc",
-        "alocando %d bytes | %s\n",
-        size, caller
-    );
+  _NOX_DEBUG_LOG(
+    DEBUG_MEMORY,
+    "MEM",
+    "alloc",
+    "alocando %d bytes | %s\n",
+    size, caller
+  );
 
-    if (!__NoxMem_autopush(NULL, size, caller, __func__, reg))
-        return NULL;
+  void* ptr = malloc(size);
+  if (ptr == NULL) return NULL;
 
-    return malloc(size);
+  if (!__NoxMem_autopush(
+      ptr,
+      size,
+      caller,
+      __func__,
+      reg
+    ))
+  {
+    _NOX_FREE_NOREGISTRY(ptr);
+    return NULL;
+  }
+
+  return ptr;
 }
 
-/* ----------------------------------------------------------------------
- *  REALLOC – idem a alloc, porém mantém ptr antigo
- * ---------------------------------------------------------------------- */
+
 static inline void*
 __NoxMem_realloc(
-    void*  ptr,
-    int    size,
-    const char* caller,
-    int    reg
+  void*  ptr,
+  int    size,
+  const char* caller,
+  int    reg
 ) {
-    _NOX_DEBUG_LOG(
-        DEBUG_MEMORY,
-        "MEM",
-        "realloc",
-        "realocando %d bytes em %p | %s\n",
-        size, ptr, caller
-    );
+  _NOX_DEBUG_LOG(
+    DEBUG_MEMORY,
+    "MEM",
+    "realloc",
+    "realocando %d bytes em %p | %s\n",
+    size, ptr, caller
+  );
 
-    if (!__NoxMem_autopush(ptr, size, caller, __func__, reg))
-        return NULL;
+  if (ptr == NULL)
+    { return __NoxMem_alloc(size, caller, reg); }
 
-    return realloc(ptr, size);
+  if (size <= 0)
+    { return NULL; }
+
+  void* new_ptr = realloc(ptr, size);
+  
+  if (new_ptr == NULL)
+    { return NULL; }
+
+  if (reg && _NOX_MEM_CTX && _NOX_MEM_CTX->data) {
+    int found = 0;
+    pthread_mutex_lock(&_NOX_MEM_MTX);
+
+    for (
+      size_t i = 0;
+      i < _NOX_MEM_CTX->data->count;
+      i++
+    ) {
+      __NoxMem_record** pp =
+        (__NoxMem_record**)
+        __NoxDynaArr_get(_NOX_MEM_CTX->data, i);
+
+      if (pp && *pp && (*pp)->ptr == ptr) {
+        (*pp)->ptr = new_ptr;
+        (*pp)->size = size;
+        (*pp)->freed = 0;
+        found = 1;
+        break;
+      }
+    }
+
+    pthread_mutex_unlock(&_NOX_MEM_MTX);
+
+    if (!found) {
+      __NoxMem_autopush(
+        new_ptr,
+        size,
+        caller,
+        __func__,
+        reg
+      );
+    }
+  }
+
+  return new_ptr;
 }
 
-/* ----------------------------------------------------------------------
- *  Destructor dos registros – libera o struct alocado em heap.
- * ---------------------------------------------------------------------- */
+
+
 static inline void
 __NoxMem_destructor(void* element) {
     if (!element) return;
-    __NoxMem_record* r = *(__NoxMem_record**)element;   /* elemento é ponteiro para registro */
+    __NoxMem_record* r = *(__NoxMem_record**)element;
     if (r) free(r);
-    /* Não liberamos r->ptr nem r->caller – são gerenciados pelo usuário. */
 }
 
-/* ----------------------------------------------------------------------
- *  Copiador – copia apenas o ponteiro para o registro (não o conteúdo).
- * ---------------------------------------------------------------------- */
 static inline __NoxValue_BOOLEAN_TYPE
 __NoxMem_copier(void* dest, const void* src) {
     if (!src) return __NoxBool_FALSE_VALUE;
@@ -171,9 +220,7 @@ __NoxMem_copier(void* dest, const void* src) {
     return __NoxBool_TRUE_VALUE;
 }
 
-/* ----------------------------------------------------------------------
- *  Init – cria a array dinâmica e marca contexto como inicializado
- * ---------------------------------------------------------------------- */
+
 static inline int
 __NoxMem_init(void) {
     __NoxDynaArr__* arr = __NoxDynaArr_create(
@@ -249,7 +296,7 @@ __NoxMem_verify(void) {
             __NoxDynaArr_get(_NOX_MEM_CTX->data, i);
         if (!pp || !*pp) continue;
         const __NoxMem_record* r = *pp;
-        if (r->size == 0 && r->freed) continue;   /* já liberado */
+        if (r->freed) continue;   /* já liberado */
 
         _NOX_DEBUG_LOG(
             DEBUG_MEMORY,
